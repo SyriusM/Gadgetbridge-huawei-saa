@@ -45,6 +45,8 @@ import nodomain.freeyourgadget.gadgetbridge.deviceevents.GBDeviceEventCallContro
 import nodomain.freeyourgadget.gadgetbridge.deviceevents.GBDeviceEventCameraRemote;
 import nodomain.freeyourgadget.gadgetbridge.deviceevents.GBDeviceEventFindPhone;
 import nodomain.freeyourgadget.gadgetbridge.deviceevents.GBDeviceEventMusicControl;
+import nodomain.freeyourgadget.gadgetbridge.devices.huawei.packets.DvLiteSensor;
+import nodomain.freeyourgadget.gadgetbridge.service.SleepAsAndroidSender;
 import nodomain.freeyourgadget.gadgetbridge.devices.huawei.HuaweiPacket;
 import nodomain.freeyourgadget.gadgetbridge.devices.huawei.packets.App;
 import nodomain.freeyourgadget.gadgetbridge.devices.huawei.packets.Calls;
@@ -142,6 +144,7 @@ public class AsynchronousResponse {
             handleEphemeris(response);
             handleEphemerisUploadService(response);
             handleAsyncBattery(response);
+            handleDvLiteSensorData(response);
             handleNotifications(response);
             handlePermissionCheck(response);
             handleDataSyncCommands(response);
@@ -876,6 +879,60 @@ public class AsynchronousResponse {
             }
             FileDownloadService2C.IncomingInitRequest.Response resp = (FileDownloadService2C.IncomingInitRequest.Response) response;
             support.deviceFileDownloadRequest(resp.filename, resp.fileType, resp.fileId, resp.fileSize, resp.srcPackage, resp.dstPackage, resp.srcFingerprint, resp.dstFingerprint);
+        }
+    }
+
+    private static final int ACC_DECIMATION = 4;
+    private int accSampleCounter = 0;
+
+    private void handleDvLiteSensorData(HuaweiPacket response) {
+        if (response.serviceId != DvLiteSensor.id || response.commandId != DvLiteSensor.SensorData.id || response.getTlv() == null) {
+            return;
+        }
+        final byte[] value = response.getTlv().getBytes(0x01, null);
+        if (value == null || value.length == 0) {
+            return;
+        }
+        final int sensorId = value[0] & 0xFF;
+        if (sensorId == DvLiteSensor.SENSOR_ID_HR) {
+            final Integer bpm = DvLiteSensor.parseHeartRate(value);
+            if (bpm == null) {
+                LOG.debug("DvLite heart rate sample rejected: {}", GB.hexdump(value));
+                return;
+            }
+            support.onDvLiteHrData();
+            final SleepAsAndroidSender sender = support.getSleepAsAndroidSender();
+            if (sender != null) {
+                sender.onHrChanged(bpm, 0);
+            }
+            return;
+        }
+        if (sensorId != DvLiteSensor.SENSOR_ID_ACC) {
+            LOG.info("DvLite sensor {} data: {}", sensorId, GB.hexdump(value));
+            return;
+        }
+        final DvLiteSensor.SensorData data = DvLiteSensor.SensorData.parse(value);
+        if (data == null) {
+            return;
+        }
+        support.onDvLiteAccData();
+
+        final SleepAsAndroidSender sender = support.getSleepAsAndroidSender();
+        if (sender == null || !sender.acceptsAccelSamples()) {
+            return;
+        }
+        // The band streams ~100 Hz and SaA sums sample magnitudes per 10 s window, so the sums
+        // came out ~4x larger than from ~25 Hz devices. Keep every 4th sample (~25 Hz).
+        final short[] xyz = data.xyz;
+        // Count across packets: each one carries 10 samples, which 4 does not divide.
+        for (int i = 0; i + 2 < xyz.length; i += 3) {
+            if (accSampleCounter++ % ACC_DECIMATION != 0) {
+                continue;
+            }
+            sender.submitAccelSample(
+                    xyz[i] * DvLiteSensor.ACC_RESOLUTION,
+                    xyz[i + 1] * DvLiteSensor.ACC_RESOLUTION,
+                    xyz[i + 2] * DvLiteSensor.ACC_RESOLUTION);
         }
     }
 }

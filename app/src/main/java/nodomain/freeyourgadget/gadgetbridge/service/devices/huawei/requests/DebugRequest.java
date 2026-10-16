@@ -38,8 +38,17 @@ public class DebugRequest extends Request {
     protected List<byte[]> createRequest() throws RequestCreationException {
         String debugString = GBApplication
             .getDeviceSpecificSharedPrefs(supportProvider.getDevice().getAddress())
-            .getString(HuaweiConstants.PREF_HUAWEI_DEBUG_REQUEST, "1,1,false,(1,/),(2,/),(3,/),(4,/)");
+            .getString(HuaweiConstants.PREF_HUAWEI_DEBUG_REQUEST, "1,1,false,(1,/),(2,/),(3,/),(4,/)")
+            .trim();
         HuaweiPacket packet = parseDebugString(debugString);
+        // Services that can wipe, reflash or overwrite device state; edit this list to opt in.
+        final byte[] blockedServices = {0x01, 0x03, 0x08, 0x09, 0x1A, 0x27, 0x28, 0x2a};
+        for (byte blocked : blockedServices) {
+            if (packet.serviceId == blocked) {
+                GB.toast("Debug request blocked: service 0x" + Integer.toHexString(blocked & 0xFF), android.widget.Toast.LENGTH_LONG, GB.WARN);
+                throw new RequestCreationException("Blocked debug service 0x" + Integer.toHexString(blocked & 0xFF));
+            }
+        }
         try {
             return packet.serialize();
         } catch (HuaweiPacket.CryptoException e) {
