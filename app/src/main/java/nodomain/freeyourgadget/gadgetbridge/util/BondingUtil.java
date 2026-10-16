@@ -405,6 +405,16 @@ public class BondingUtil {
                                           final boolean useLe,
                                           final int requestCode,
                                           @Nullable final Runnable onAssociated) {
+        associateCompanion(activity, mac, useLe, requestCode, onAssociated, null);
+    }
+
+    @RequiresApi(Build.VERSION_CODES.O)
+    public static void associateCompanion(final Activity activity,
+                                          final String mac,
+                                          final boolean useLe,
+                                          final int requestCode,
+                                          @Nullable final Runnable onAssociated,
+                                          @Nullable final Runnable onFailed) {
         final CompanionDeviceManager manager = getCompanionDeviceManager(activity);
         if (manager == null) {
             return;
@@ -432,6 +442,9 @@ public class BondingUtil {
             public void onFailure(final CharSequence error) {
                 LOG.warn("Association with {} failed: {}", mac, error);
                 toast(activity, activity.getString(R.string.discovery_bonding_error, error), Toast.LENGTH_SHORT, GB.ERROR);
+                if (onFailed != null) {
+                    onFailed.run();
+                }
             }
 
             @SuppressWarnings("deprecation")
