@@ -83,6 +83,7 @@ import nodomain.freeyourgadget.gadgetbridge.devices.huawei.HuaweiPacket;
 import nodomain.freeyourgadget.gadgetbridge.devices.huawei.HuaweiPdrParser;
 import nodomain.freeyourgadget.gadgetbridge.devices.huawei.HuaweiSampleProvider;
 import nodomain.freeyourgadget.gadgetbridge.devices.huawei.HuaweiSequenceDataFileParser;
+import nodomain.freeyourgadget.gadgetbridge.devices.huawei.HuaweiTLV;
 import nodomain.freeyourgadget.gadgetbridge.devices.huawei.HuaweiSleepStatsSampleProvider;
 import nodomain.freeyourgadget.gadgetbridge.devices.huawei.HuaweiStressParser;
 import nodomain.freeyourgadget.gadgetbridge.devices.huawei.HuaweiTruSleepParser;
@@ -177,6 +178,9 @@ import nodomain.freeyourgadget.gadgetbridge.service.devices.huawei.requests.Send
 import nodomain.freeyourgadget.gadgetbridge.service.devices.huawei.requests.SendRunPaceConfigRequest;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.huawei.requests.SendSetContactsRequest;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.huawei.requests.SendNotifyHeartRateCapabilityRequest;
+import nodomain.freeyourgadget.gadgetbridge.service.devices.huawei.requests.SendDvLiteSensorControlRequest;
+import nodomain.freeyourgadget.gadgetbridge.devices.huawei.packets.DvLiteSensor;
+import android.os.SystemClock;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.huawei.requests.SendNotifyRestHeartRateCapabilityRequest;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.huawei.requests.SendSetECGOpenRequest;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.huawei.requests.SendSleepBreathRequest;
@@ -245,6 +249,8 @@ import nodomain.freeyourgadget.gadgetbridge.util.GB;
 import nodomain.freeyourgadget.gadgetbridge.util.MediaManager;
 import nodomain.freeyourgadget.gadgetbridge.util.StringUtils;
 import nodomain.freeyourgadget.gadgetbridge.util.preferences.DevicePrefs;
+import nodomain.freeyourgadget.gadgetbridge.service.SleepAsAndroidSender;
+import nodomain.freeyourgadget.gadgetbridge.externalevents.sleepasandroid.SleepAsAndroidAction;
 
 public class HuaweiSupportProvider {
     private static final Logger LOG = LoggerFactory.getLogger(HuaweiSupportProvider.class);
@@ -274,6 +280,69 @@ public class HuaweiSupportProvider {
     protected String macAddress;
     protected String androidID;
     protected short msgId = 0;
+
+    private SleepAsAndroidSender sleepAsAndroidSender;
+    private long lastStartTrackingTimestamp = 0;
+    private int sleepTrackingPollCount = 0;
+    private int dvLiteSeq = 0;
+    private volatile long lastDvLiteAccDataMs = 0;
+    private static final long DVLITE_ACC_STALE_MS = 10_000L;
+
+    public void onDvLiteAccData() {
+        lastDvLiteAccDataMs = SystemClock.elapsedRealtime();
+    }
+
+    private void sendDvLiteAccControl(String method) {
+        try {
+            new SendDvLiteSensorControlRequest(this, DvLiteSensor.SENSOR_ID_ACC, ++dvLiteSeq, method).doPerform();
+            LOG.info("DvLite accelerometer {} sent (seq {})", method, dvLiteSeq);
+        } catch (Exception e) {
+            LOG.warn("DvLite accelerometer {} failed: {}", method, e.getMessage());
+        }
+    }
+
+    private final Runnable sleepTrackingPollingRunner = new Runnable() {
+        @Override
+        public void run() {
+            if (sleepAsAndroidSender != null && sleepAsAndroidSender.isTrackingOngoing()) {
+                sleepTrackingPollCount++;
+
+                if (SystemClock.elapsedRealtime() - lastDvLiteAccDataMs > DVLITE_ACC_STALE_MS) {
+                    sendDvLiteAccControl(DvLiteSensor.METHOD_ENABLE);
+                    lastDvLiteAccDataMs = SystemClock.elapsedRealtime();
+                }
+
+                // Every 9 seconds (every 3rd poll), send HR notification heartbeat to keep PPG sensor active
+                if (sleepTrackingPollCount % 3 == 0) {
+                    try {
+                        SendNotifyHeartRateCapabilityRequest hrReq = new SendNotifyHeartRateCapabilityRequest(HuaweiSupportProvider.this);
+                        hrReq.doPerform();
+                    } catch (Exception e) {
+                        LOG.debug("Sleep tracking HR keepalive error: {}", e.getMessage());
+                    }
+                }
+
+                handler.postDelayed(this, 3000L);
+            }
+        }
+    };
+
+    private void startSleepTrackingPollingRunner() {
+        sleepTrackingPollCount = 0;
+        sendDvLiteAccControl(DvLiteSensor.METHOD_ENABLE);
+        lastDvLiteAccDataMs = SystemClock.elapsedRealtime();
+        if (handler != null) {
+            handler.removeCallbacks(sleepTrackingPollingRunner);
+            handler.postDelayed(sleepTrackingPollingRunner, 2000L);
+        }
+    }
+
+    private void stopSleepTrackingPollingRunner() {
+        if (handler != null) {
+            handler.removeCallbacks(sleepTrackingPollingRunner);
+        }
+        sendDvLiteAccControl(DvLiteSensor.METHOD_DISABLE);
+    }
 
     private MediaManager mediaManager = null;
 
@@ -2796,6 +2865,97 @@ public class HuaweiSupportProvider {
             }
         } else {
             LOG.error("Contacts not supported");
+        }
+    }
+
+    public SleepAsAndroidSender getSleepAsAndroidSender() {
+        if (sleepAsAndroidSender == null && gbDevice != null) {
+            sleepAsAndroidSender = new SleepAsAndroidSender(gbDevice);
+        }
+        return sleepAsAndroidSender;
+    }
+
+    public Integer extractHeartRateFromTlv(HuaweiTLV tlv) {
+        if (tlv == null) return null;
+        int[] hrTags = {0x02, 0x17, 0x05, 0x06, 0x16, 0x24};
+        for (int tag : hrTags) {
+            if (tlv.contains(tag)) {
+                try {
+                    Integer val = tlv.getAsInteger(tag);
+                    if (val != null && val >= 35 && val <= 230) {
+                        return val;
+                    }
+                } catch (Exception ignored) {}
+                try {
+                    byte[] bytes = tlv.getBytes(tag);
+                    if (bytes != null && bytes.length > 0) {
+                        int bVal = bytes[0] & 0xFF;
+                        if (bVal >= 35 && bVal <= 230) {
+                            return bVal;
+                        }
+                    }
+                } catch (Exception ignored) {}
+            }
+        }
+        try {
+            for (HuaweiTLV.TLV item : tlv.get()) {
+                byte itemTag = item.getTag();
+                if ((itemTag & 0x80) != 0) {
+                    try {
+                        HuaweiTLV sub = new HuaweiTLV().parse(item.getValue());
+                        Integer val = extractHeartRateFromTlv(sub);
+                        if (val != null) return val;
+                    } catch (Exception ignored) {}
+                }
+            }
+        } catch (Exception ignored) {}
+        return null;
+    }
+
+    public void onSleepAsAndroidAction(String action, Bundle extras) {
+        SleepAsAndroidSender sender = getSleepAsAndroidSender();
+        if (sender == null) return;
+
+        boolean isTest = extras != null && extras.getBoolean("IS_TEST", false);
+        if (!isTest && !SleepAsAndroidAction.HINT.equals(action)) {
+            try {
+                sender.validateAction(action);
+            } catch (UnsupportedOperationException e) {
+                LOG.warn("Unsupported SleepAsAndroid action: " + action);
+                return;
+            }
+        }
+
+        LOG.info("Huawei handling SleepAsAndroid action: " + action + (isTest ? " (TEST)" : ""));
+
+        switch (action) {
+            case SleepAsAndroidAction.CHECK_CONNECTED:
+                sender.confirmConnected();
+                break;
+            case SleepAsAndroidAction.START_TRACKING:
+                lastStartTrackingTimestamp = System.currentTimeMillis();
+                startSleepTrackingPollingRunner();
+                sender.startTracking();
+                break;
+            case SleepAsAndroidAction.STOP_TRACKING:
+                stopSleepTrackingPollingRunner();
+                sender.stopTracking();
+                break;
+            case SleepAsAndroidAction.SET_BATCH_SIZE:
+                sender.setBatchSize(extras.getLong("SIZE", 12L));
+                break;
+            case SleepAsAndroidAction.SET_PAUSE: {
+                long pauseTimestamp = extras.getLong("TIMESTAMP");
+                long delay = pauseTimestamp > 0 ? pauseTimestamp - System.currentTimeMillis() : 0;
+                sender.pauseTracking(delay);
+                break;
+            }
+            case SleepAsAndroidAction.SET_SUSPENDED:
+                sender.pauseTracking(extras.getBoolean("SUSPENDED", false));
+                break;
+            default:
+                LOG.warn("Unknown SleepAsAndroid action: " + action);
+                break;
         }
     }
 

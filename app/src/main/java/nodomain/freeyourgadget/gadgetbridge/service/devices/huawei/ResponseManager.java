@@ -148,6 +148,11 @@ public class ResponseManager {
                         LOG.debug("Service: {}, command: {}, asynchronous response.", Integer.toHexString(receivedPacket.serviceId & 0xff), Integer.toHexString(receivedPacket.commandId & 0xff));
                     }
 
+                    if ((receivedPacket.serviceId & 0xff) == 0x30 && receivedPacket.commandId != 0x01 && receivedPacket.getTlv() != null) {
+                        LOG.info("DvLite 0x30/0x{} payload: {}", Integer.toHexString(receivedPacket.commandId & 0xff),
+                                nodomain.freeyourgadget.gadgetbridge.util.GB.hexdump(receivedPacket.getTlv().serialize()));
+                    }
+
                     // Asynchronous response
                     asynchronousResponse.handleResponse(receivedPacket);
                 } else {
