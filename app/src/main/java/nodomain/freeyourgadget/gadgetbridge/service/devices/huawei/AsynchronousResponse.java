@@ -45,6 +45,9 @@ import nodomain.freeyourgadget.gadgetbridge.deviceevents.GBDeviceEventCallContro
 import nodomain.freeyourgadget.gadgetbridge.deviceevents.GBDeviceEventCameraRemote;
 import nodomain.freeyourgadget.gadgetbridge.deviceevents.GBDeviceEventFindPhone;
 import nodomain.freeyourgadget.gadgetbridge.deviceevents.GBDeviceEventMusicControl;
+import nodomain.freeyourgadget.gadgetbridge.devices.huawei.HuaweiTLV;
+import nodomain.freeyourgadget.gadgetbridge.devices.huawei.packets.DvLiteSensor;
+import nodomain.freeyourgadget.gadgetbridge.service.SleepAsAndroidSender;
 import nodomain.freeyourgadget.gadgetbridge.devices.huawei.HuaweiPacket;
 import nodomain.freeyourgadget.gadgetbridge.devices.huawei.packets.App;
 import nodomain.freeyourgadget.gadgetbridge.devices.huawei.packets.Calls;
@@ -142,6 +145,8 @@ public class AsynchronousResponse {
             handleEphemeris(response);
             handleEphemerisUploadService(response);
             handleAsyncBattery(response);
+            handleSleepAsAndroidHeartRate(response);
+            handleDvLiteSensorData(response);
             handleNotifications(response);
             handlePermissionCheck(response);
             handleDataSyncCommands(response);
@@ -876,6 +881,51 @@ public class AsynchronousResponse {
             }
             FileDownloadService2C.IncomingInitRequest.Response resp = (FileDownloadService2C.IncomingInitRequest.Response) response;
             support.deviceFileDownloadRequest(resp.filename, resp.fileType, resp.fileId, resp.fileSize, resp.srcPackage, resp.dstPackage, resp.srcFingerprint, resp.dstFingerprint);
+        }
+    }
+
+    private void handleSleepAsAndroidHeartRate(HuaweiPacket response) {
+        if (response.serviceId == DvLiteSensor.id || support.getSleepAsAndroidSender() == null) {
+            return;
+        }
+
+        HuaweiTLV tlv = response.getTlv();
+        if (tlv == null) {
+            return;
+        }
+
+        try {
+            Integer hr = support.extractHeartRateFromTlv(tlv);
+            if (hr != null && hr >= 35 && hr <= 230) {
+                LOG.info("Forwarding real-time HR to SaA: {} bpm (Service=0x{})",
+                        hr, Integer.toHexString(response.serviceId & 0xFF));
+                support.getSleepAsAndroidSender().onHrChanged(hr, 0);
+            }
+        } catch (Exception e) {
+            LOG.warn("Error processing SaA heart rate: " + e.getMessage());
+        }
+    }
+
+    private void handleDvLiteSensorData(HuaweiPacket response) {
+        if (response.serviceId != DvLiteSensor.id || response.commandId != DvLiteSensor.SensorData.id || response.getTlv() == null) {
+            return;
+        }
+        final DvLiteSensor.SensorData data = DvLiteSensor.SensorData.parse(response.getTlv().getBytes(0x01, null));
+        if (data == null || data.sensorId != DvLiteSensor.SENSOR_ID_ACC) {
+            return;
+        }
+        support.onDvLiteAccData();
+
+        final SleepAsAndroidSender sender = support.getSleepAsAndroidSender();
+        if (sender == null || !sender.acceptsAccelSamples()) {
+            return;
+        }
+        final short[] xyz = data.xyz;
+        for (int i = 0; i + 2 < xyz.length; i += 3) {
+            sender.submitAccelSample(
+                    xyz[i] * DvLiteSensor.ACC_RESOLUTION,
+                    xyz[i + 1] * DvLiteSensor.ACC_RESOLUTION,
+                    xyz[i + 2] * DvLiteSensor.ACC_RESOLUTION);
         }
     }
 }

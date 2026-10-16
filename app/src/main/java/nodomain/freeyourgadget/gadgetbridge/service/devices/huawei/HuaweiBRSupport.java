@@ -242,4 +242,14 @@ public class HuaweiBRSupport extends AbstractBTBRDeviceSupport {
     public void onSetNavigationInfo(NavigationInfoSpec navigationInfoSpec) {
         supportProvider.onSetNavigationInfo(navigationInfoSpec);
     }
+
+    @Override
+    public void onSleepAsAndroidAction(String action, Bundle extras) {
+        supportProvider.onSleepAsAndroidAction(action, extras);
+    }
+
+    @Override
+    public nodomain.freeyourgadget.gadgetbridge.service.SleepAsAndroidSender getSleepAsAndroidSender() {
+        return supportProvider.getSleepAsAndroidSender();
+    }
 }

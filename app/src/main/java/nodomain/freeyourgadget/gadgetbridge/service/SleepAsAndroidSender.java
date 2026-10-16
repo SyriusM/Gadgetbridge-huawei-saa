@@ -727,6 +727,10 @@ public class SleepAsAndroidSender {
         return GBApplication.getPrefs().getBoolean(GBPrefs.SLEEP_AS_ANDROID_ENABLED, false);
     }
 
+    public boolean isTrackingOngoing() {
+        return trackingOngoing;
+    }
+
     /**
      * Validate if the device is allowed to receive a specific action
      * @param action the action send my the broadcast receiver
