@@ -5,6 +5,8 @@ import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.content.Context
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import androidx.annotation.RequiresApi
 import androidx.core.content.edit
 import nodomain.freeyourgadget.gadgetbridge.GBApplication
@@ -58,7 +60,33 @@ object CompanionPairingHint {
             ?.getRemoteDevice(device.address)
             ?.bondState == BluetoothDevice.BOND_BONDED
         val useLe = !bonded && device.deviceCoordinator.connectionType == DeviceCoordinator.ConnectionType.BLE
-        BondingUtil.associateCompanion(activity, device.address, useLe, REQUEST_CODE, null)
+        if (!useLe || !device.isConnected) {
+            BondingUtil.associateCompanion(activity, device.address, useLe, REQUEST_CODE, null)
+            return
+        }
+        // A connected BLE device does not advertise, so the companion scan would never find it.
+        // Disconnect first, let the device start advertising, and reconnect once the chooser is done.
+        LOG.debug("Disconnecting {} for companion association", device.address)
+        reconnectAfterChooser = device
+        GBApplication.deviceService(device).disconnect()
+        Handler(Looper.getMainLooper()).postDelayed({
+            BondingUtil.associateCompanion(activity, device.address, true, REQUEST_CODE, null) {
+                reconnectIfPending(device.address)
+            }
+        }, ADVERTISING_DELAY_MS)
+    }
+
+    private const val ADVERTISING_DELAY_MS = 1500L
+    private var reconnectAfterChooser: GBDevice? = null
+
+    private fun reconnectIfPending(address: String) {
+        val device = reconnectAfterChooser ?: return
+        if (device.address != address) {
+            return
+        }
+        reconnectAfterChooser = null
+        LOG.debug("Reconnecting {} after companion association", address)
+        GBApplication.deviceService(device).connect()
     }
 
     @JvmStatic
@@ -67,5 +95,6 @@ object CompanionPairingHint {
             LOG.debug("{} is now associated as companion", address)
             BondingUtil.StartObserving(context, address)
         }
+        reconnectIfPending(address)
     }
 }
