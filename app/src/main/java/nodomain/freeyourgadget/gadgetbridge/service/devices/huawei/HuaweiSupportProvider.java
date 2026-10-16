@@ -83,7 +83,6 @@ import nodomain.freeyourgadget.gadgetbridge.devices.huawei.HuaweiPacket;
 import nodomain.freeyourgadget.gadgetbridge.devices.huawei.HuaweiPdrParser;
 import nodomain.freeyourgadget.gadgetbridge.devices.huawei.HuaweiSampleProvider;
 import nodomain.freeyourgadget.gadgetbridge.devices.huawei.HuaweiSequenceDataFileParser;
-import nodomain.freeyourgadget.gadgetbridge.devices.huawei.HuaweiTLV;
 import nodomain.freeyourgadget.gadgetbridge.devices.huawei.HuaweiSleepStatsSampleProvider;
 import nodomain.freeyourgadget.gadgetbridge.devices.huawei.HuaweiStressParser;
 import nodomain.freeyourgadget.gadgetbridge.devices.huawei.HuaweiTruSleepParser;
@@ -250,6 +249,7 @@ import nodomain.freeyourgadget.gadgetbridge.util.MediaManager;
 import nodomain.freeyourgadget.gadgetbridge.util.StringUtils;
 import nodomain.freeyourgadget.gadgetbridge.util.preferences.DevicePrefs;
 import nodomain.freeyourgadget.gadgetbridge.service.SleepAsAndroidSender;
+import nodomain.freeyourgadget.gadgetbridge.devices.SleepAsAndroidFeature;
 import nodomain.freeyourgadget.gadgetbridge.externalevents.sleepasandroid.SleepAsAndroidAction;
 
 public class HuaweiSupportProvider {
@@ -283,21 +283,30 @@ public class HuaweiSupportProvider {
 
     private SleepAsAndroidSender sleepAsAndroidSender;
     private long lastStartTrackingTimestamp = 0;
-    private int sleepTrackingPollCount = 0;
     private int dvLiteSeq = 0;
     private volatile long lastDvLiteAccDataMs = 0;
+    private volatile long lastDvLiteHrDataMs = 0;
+    private boolean dvLiteHrActive = false;
     private static final long DVLITE_ACC_STALE_MS = 10_000L;
+    // Band 9 measures HR in bursts like its own spot check: ~14 s warm-up, ~7 readings at 1/s, then
+    // the LED goes off. Re-enabling 30 s after the last reading gives one burst per ~50 s, which is
+    // enough for sleep tracking and keeps the LED (and battery drain) mostly off.
+    private static final long DVLITE_HR_STALE_MS = 30_000L;
 
     public void onDvLiteAccData() {
         lastDvLiteAccDataMs = SystemClock.elapsedRealtime();
     }
 
-    private void sendDvLiteAccControl(String method) {
+    public void onDvLiteHrData() {
+        lastDvLiteHrDataMs = SystemClock.elapsedRealtime();
+    }
+
+    private void sendDvLiteSensorControl(int sensorId, int rate, String method) {
         try {
-            new SendDvLiteSensorControlRequest(this, DvLiteSensor.SENSOR_ID_ACC, ++dvLiteSeq, method).doPerform();
-            LOG.info("DvLite accelerometer {} sent (seq {})", method, dvLiteSeq);
+            new SendDvLiteSensorControlRequest(this, sensorId, ++dvLiteSeq, rate, method).doPerform();
+            LOG.info("DvLite sensor {} {} sent (seq {})", sensorId, method, dvLiteSeq);
         } catch (Exception e) {
-            LOG.warn("DvLite accelerometer {} failed: {}", method, e.getMessage());
+            LOG.warn("DvLite sensor {} {} failed: {}", sensorId, method, e.getMessage());
         }
     }
 
@@ -305,32 +314,34 @@ public class HuaweiSupportProvider {
         @Override
         public void run() {
             if (sleepAsAndroidSender != null && sleepAsAndroidSender.isTrackingOngoing()) {
-                sleepTrackingPollCount++;
-
-                if (SystemClock.elapsedRealtime() - lastDvLiteAccDataMs > DVLITE_ACC_STALE_MS) {
-                    sendDvLiteAccControl(DvLiteSensor.METHOD_ENABLE);
-                    lastDvLiteAccDataMs = SystemClock.elapsedRealtime();
+                final long now = SystemClock.elapsedRealtime();
+                if (now - lastDvLiteAccDataMs > DVLITE_ACC_STALE_MS) {
+                    sendDvLiteSensorControl(DvLiteSensor.SENSOR_ID_ACC, DvLiteSensor.RATE_MID, DvLiteSensor.METHOD_ENABLE);
+                    lastDvLiteAccDataMs = now;
                 }
-
-                // Every 9 seconds (every 3rd poll), send HR notification heartbeat to keep PPG sensor active
-                if (sleepTrackingPollCount % 3 == 0) {
-                    try {
-                        SendNotifyHeartRateCapabilityRequest hrReq = new SendNotifyHeartRateCapabilityRequest(HuaweiSupportProvider.this);
-                        hrReq.doPerform();
-                    } catch (Exception e) {
-                        LOG.debug("Sleep tracking HR keepalive error: {}", e.getMessage());
-                    }
+                if (dvLiteHrActive && now - lastDvLiteHrDataMs > DVLITE_HR_STALE_MS) {
+                    sendDvLiteSensorControl(DvLiteSensor.SENSOR_ID_HR, DvLiteSensor.RATE_HIGH, DvLiteSensor.METHOD_ENABLE);
+                    lastDvLiteHrDataMs = now;
                 }
-
                 handler.postDelayed(this, 3000L);
             }
         }
     };
 
     private void startSleepTrackingPollingRunner() {
-        sleepTrackingPollCount = 0;
-        sendDvLiteAccControl(DvLiteSensor.METHOD_ENABLE);
-        lastDvLiteAccDataMs = SystemClock.elapsedRealtime();
+        final long now = SystemClock.elapsedRealtime();
+        sendDvLiteSensorControl(DvLiteSensor.SENSOR_ID_ACC, DvLiteSensor.RATE_MID, DvLiteSensor.METHOD_ENABLE);
+        lastDvLiteAccDataMs = now;
+        // Heart rate needs the band's sensor switched on, so follow the Gadgetbridge preference
+        // instead of waiting for Sleep as Android to ask for it.
+        if (sleepAsAndroidSender != null && sleepAsAndroidSender.isFeatureEnabled(SleepAsAndroidFeature.HEART_RATE)) {
+            sleepAsAndroidSender.requestHeartRate();
+        }
+        dvLiteHrActive = sleepAsAndroidSender != null && sleepAsAndroidSender.isHeartRateRequested();
+        if (dvLiteHrActive) {
+            sendDvLiteSensorControl(DvLiteSensor.SENSOR_ID_HR, DvLiteSensor.RATE_HIGH, DvLiteSensor.METHOD_ENABLE);
+            lastDvLiteHrDataMs = now;
+        }
         if (handler != null) {
             handler.removeCallbacks(sleepTrackingPollingRunner);
             handler.postDelayed(sleepTrackingPollingRunner, 2000L);
@@ -341,7 +352,11 @@ public class HuaweiSupportProvider {
         if (handler != null) {
             handler.removeCallbacks(sleepTrackingPollingRunner);
         }
-        sendDvLiteAccControl(DvLiteSensor.METHOD_DISABLE);
+        sendDvLiteSensorControl(DvLiteSensor.SENSOR_ID_ACC, DvLiteSensor.RATE_MID, DvLiteSensor.METHOD_DISABLE);
+        if (dvLiteHrActive) {
+            sendDvLiteSensorControl(DvLiteSensor.SENSOR_ID_HR, DvLiteSensor.RATE_HIGH, DvLiteSensor.METHOD_DISABLE);
+            dvLiteHrActive = false;
+        }
     }
 
     private MediaManager mediaManager = null;
@@ -2875,46 +2890,13 @@ public class HuaweiSupportProvider {
         return sleepAsAndroidSender;
     }
 
-    public Integer extractHeartRateFromTlv(HuaweiTLV tlv) {
-        if (tlv == null) return null;
-        int[] hrTags = {0x02, 0x17, 0x05, 0x06, 0x16, 0x24};
-        for (int tag : hrTags) {
-            if (tlv.contains(tag)) {
-                try {
-                    Integer val = tlv.getAsInteger(tag);
-                    if (val != null && val >= 35 && val <= 230) {
-                        return val;
-                    }
-                } catch (Exception ignored) {}
-                try {
-                    byte[] bytes = tlv.getBytes(tag);
-                    if (bytes != null && bytes.length > 0) {
-                        int bVal = bytes[0] & 0xFF;
-                        if (bVal >= 35 && bVal <= 230) {
-                            return bVal;
-                        }
-                    }
-                } catch (Exception ignored) {}
-            }
-        }
-        try {
-            for (HuaweiTLV.TLV item : tlv.get()) {
-                byte itemTag = item.getTag();
-                if ((itemTag & 0x80) != 0) {
-                    try {
-                        HuaweiTLV sub = new HuaweiTLV().parse(item.getValue());
-                        Integer val = extractHeartRateFromTlv(sub);
-                        if (val != null) return val;
-                    } catch (Exception ignored) {}
-                }
-            }
-        } catch (Exception ignored) {}
-        return null;
-    }
-
     public void onSleepAsAndroidAction(String action, Bundle extras) {
         SleepAsAndroidSender sender = getSleepAsAndroidSender();
         if (sender == null) return;
+        if (gbDevice == null || !gbDevice.getState().equalsOrHigherThan(GBDevice.State.INITIALIZED)) {
+            LOG.warn("Device not initialized, dropping SaA action {}", action);
+            return;
+        }
 
         boolean isTest = extras != null && extras.getBoolean("IS_TEST", false);
         if (!isTest && !SleepAsAndroidAction.HINT.equals(action)) {
@@ -2934,8 +2916,9 @@ public class HuaweiSupportProvider {
                 break;
             case SleepAsAndroidAction.START_TRACKING:
                 lastStartTrackingTimestamp = System.currentTimeMillis();
+                // Extras carry which sensors SaA wants; without them heart rate is never forwarded.
+                sender.startTracking(extras);
                 startSleepTrackingPollingRunner();
-                sender.startTracking();
                 break;
             case SleepAsAndroidAction.STOP_TRACKING:
                 stopSleepTrackingPollingRunner();
