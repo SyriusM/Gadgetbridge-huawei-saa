@@ -507,6 +507,17 @@ public class SleepAsAndroidSender {
         return heartRateRequested;
     }
 
+    /**
+     * Forward heart rate for this session even though Sleep as Android did not ask for it, for
+     * devices that stream it only on demand and should do so whenever the user enabled it here.
+     */
+    public void requestHeartRate() {
+        if (!heartRateRequested) {
+            LOG.debug("Heart rate enabled for this session by the Gadgetbridge preference");
+            heartRateRequested = true;
+        }
+    }
+
     public boolean isOximetryRequested() {
         return oximetryRequested;
     }

@@ -45,7 +45,6 @@ import nodomain.freeyourgadget.gadgetbridge.deviceevents.GBDeviceEventCallContro
 import nodomain.freeyourgadget.gadgetbridge.deviceevents.GBDeviceEventCameraRemote;
 import nodomain.freeyourgadget.gadgetbridge.deviceevents.GBDeviceEventFindPhone;
 import nodomain.freeyourgadget.gadgetbridge.deviceevents.GBDeviceEventMusicControl;
-import nodomain.freeyourgadget.gadgetbridge.devices.huawei.HuaweiTLV;
 import nodomain.freeyourgadget.gadgetbridge.devices.huawei.packets.DvLiteSensor;
 import nodomain.freeyourgadget.gadgetbridge.service.SleepAsAndroidSender;
 import nodomain.freeyourgadget.gadgetbridge.devices.huawei.HuaweiPacket;
@@ -145,7 +144,6 @@ public class AsynchronousResponse {
             handleEphemeris(response);
             handleEphemerisUploadService(response);
             handleAsyncBattery(response);
-            handleSleepAsAndroidHeartRate(response);
             handleDvLiteSensorData(response);
             handleNotifications(response);
             handlePermissionCheck(response);
@@ -884,34 +882,34 @@ public class AsynchronousResponse {
         }
     }
 
-    private void handleSleepAsAndroidHeartRate(HuaweiPacket response) {
-        if (response.serviceId == DvLiteSensor.id || support.getSleepAsAndroidSender() == null) {
-            return;
-        }
-
-        HuaweiTLV tlv = response.getTlv();
-        if (tlv == null) {
-            return;
-        }
-
-        try {
-            Integer hr = support.extractHeartRateFromTlv(tlv);
-            if (hr != null && hr >= 35 && hr <= 230) {
-                LOG.info("Forwarding real-time HR to SaA: {} bpm (Service=0x{})",
-                        hr, Integer.toHexString(response.serviceId & 0xFF));
-                support.getSleepAsAndroidSender().onHrChanged(hr, 0);
-            }
-        } catch (Exception e) {
-            LOG.warn("Error processing SaA heart rate: " + e.getMessage());
-        }
-    }
-
     private void handleDvLiteSensorData(HuaweiPacket response) {
         if (response.serviceId != DvLiteSensor.id || response.commandId != DvLiteSensor.SensorData.id || response.getTlv() == null) {
             return;
         }
-        final DvLiteSensor.SensorData data = DvLiteSensor.SensorData.parse(response.getTlv().getBytes(0x01, null));
-        if (data == null || data.sensorId != DvLiteSensor.SENSOR_ID_ACC) {
+        final byte[] value = response.getTlv().getBytes(0x01, null);
+        if (value == null || value.length == 0) {
+            return;
+        }
+        final int sensorId = value[0] & 0xFF;
+        if (sensorId == DvLiteSensor.SENSOR_ID_HR) {
+            final Integer bpm = DvLiteSensor.parseHeartRate(value);
+            if (bpm == null) {
+                LOG.debug("DvLite heart rate sample rejected: {}", GB.hexdump(value));
+                return;
+            }
+            support.onDvLiteHrData();
+            final SleepAsAndroidSender sender = support.getSleepAsAndroidSender();
+            if (sender != null) {
+                sender.onHrChanged(bpm, 0);
+            }
+            return;
+        }
+        if (sensorId != DvLiteSensor.SENSOR_ID_ACC) {
+            LOG.info("DvLite sensor {} data: {}", sensorId, GB.hexdump(value));
+            return;
+        }
+        final DvLiteSensor.SensorData data = DvLiteSensor.SensorData.parse(value);
+        if (data == null) {
             return;
         }
         support.onDvLiteAccData();

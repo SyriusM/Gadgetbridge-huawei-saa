@@ -13,8 +13,23 @@ import nodomain.freeyourgadget.gadgetbridge.devices.huawei.HuaweiTLV;
 public class DvLiteSensor {
     public static final byte id = 0x30;
 
+    public static final int SENSOR_ID_HR = 32;
     public static final int SENSOR_ID_ACC = 33;
     public static final float ACC_RESOLUTION = 0.0023928226f; // m/s^2 per LSB, reported by Band 9
+
+    // Huawei Health knows HIGH(1) and MID(2). Band 9 streams ACC at ~100 Hz on MID and refuses HR
+    // on MID (OperationResult -1) while accepting it on HIGH (~1 Hz).
+    public static final int RATE_HIGH = 1;
+    public static final int RATE_MID = 2;
+
+    /** HR payload: sensorId (1) + device uptime ms (8, BE) + bpm (int32 LE); values above 255 are error codes. */
+    public static Integer parseHeartRate(byte[] value) {
+        if (value == null || value.length < 13 || (value[0] & 0xFF) != SENSOR_ID_HR) {
+            return null;
+        }
+        final int bpm = ByteBuffer.wrap(value, 9, 4).order(ByteOrder.LITTLE_ENDIAN).getInt();
+        return bpm > 255 ? null : bpm;
+    }
 
     public static final String METHOD_ENABLE = "ENABLE";
     public static final String METHOD_DISABLE = "DISABLE";
