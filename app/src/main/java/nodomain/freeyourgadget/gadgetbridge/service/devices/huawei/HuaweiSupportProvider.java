@@ -2959,6 +2959,8 @@ public class HuaweiSupportProvider {
      * Sleep as Android hints (lucid dreaming cues, anti-snoring) should be a gentle buzz, so send
      * a short notification, which vibrates once, instead of the strong find device vibration.
      */
+    private static final long SAA_HINT_REMOVE_DELAY_MS = 2000L;
+
     private void triggerSleepAsAndroidHint(int repeat) {
         if (repeat <= 0) {
             return;
@@ -2968,6 +2970,10 @@ public class HuaweiSupportProvider {
         spec.setType(NotificationType.UNKNOWN);
         spec.setTitle("Sleep as Android");
         huaweiNotificationsManager.onNotification(spec);
+        // Only the buzz matters; do not leave the hint in the band's notification list.
+        if (handler != null) {
+            handler.postDelayed(() -> huaweiNotificationsManager.onDeleteNotification(spec.getId()), SAA_HINT_REMOVE_DELAY_MS);
+        }
     }
 
     public void onAddCalendarEvent(final CalendarEventSpec calendarEventSpec) {
