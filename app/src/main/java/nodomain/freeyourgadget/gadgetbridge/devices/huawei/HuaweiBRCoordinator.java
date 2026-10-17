@@ -48,7 +48,8 @@ public abstract class HuaweiBRCoordinator extends HuaweiCoordinator {
     public java.util.Set<nodomain.freeyourgadget.gadgetbridge.devices.SleepAsAndroidFeature> getSleepAsAndroidFeatures(@NonNull final GBDevice device) {
         return java.util.EnumSet.of(
                 nodomain.freeyourgadget.gadgetbridge.devices.SleepAsAndroidFeature.HEART_RATE,
-                nodomain.freeyourgadget.gadgetbridge.devices.SleepAsAndroidFeature.ACCELEROMETER
+                nodomain.freeyourgadget.gadgetbridge.devices.SleepAsAndroidFeature.ACCELEROMETER,
+                nodomain.freeyourgadget.gadgetbridge.devices.SleepAsAndroidFeature.NOTIFICATIONS
         );
     }
 }
