@@ -35,6 +35,7 @@ import java.time.LocalTime;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 
 import nodomain.freeyourgadget.gadgetbridge.GBApplication;
 import nodomain.freeyourgadget.gadgetbridge.R;
@@ -46,6 +47,7 @@ import nodomain.freeyourgadget.gadgetbridge.deviceevents.GBDeviceEventCameraRemo
 import nodomain.freeyourgadget.gadgetbridge.deviceevents.GBDeviceEventFindPhone;
 import nodomain.freeyourgadget.gadgetbridge.deviceevents.GBDeviceEventMusicControl;
 import nodomain.freeyourgadget.gadgetbridge.devices.huawei.packets.DvLiteSensor;
+import nodomain.freeyourgadget.gadgetbridge.devices.huawei.packets.HrRriTest;
 import nodomain.freeyourgadget.gadgetbridge.service.SleepAsAndroidSender;
 import nodomain.freeyourgadget.gadgetbridge.devices.huawei.HuaweiPacket;
 import nodomain.freeyourgadget.gadgetbridge.devices.huawei.packets.App;
@@ -145,6 +147,7 @@ public class AsynchronousResponse {
             handleEphemerisUploadService(response);
             handleAsyncBattery(response);
             handleDvLiteSensorData(response);
+            handleRriData(response);
             handleNotifications(response);
             handlePermissionCheck(response);
             handleDataSyncCommands(response);
@@ -883,6 +886,25 @@ public class AsynchronousResponse {
     }
 
     private static final int ACC_DECIMATION = 4;
+    private void handleRriData(HuaweiPacket response) {
+        if (!(response instanceof HrRriTest.RriData.Response)) {
+            return;
+        }
+        support.onRriData();
+        final List<HrRriTest.RriData.Response.rriSqiData> data = ((HrRriTest.RriData.Response) response).containers;
+        LOG.debug("RRI data: {}", data);
+        final SleepAsAndroidSender sender = support.getSleepAsAndroidSender();
+        if (sender == null || data == null) {
+            return;
+        }
+        for (HrRriTest.RriData.Response.rriSqiData d : data) {
+            // Zero signal quality marks an interval the band could not measure.
+            if (d.sqi != 0) {
+                sender.sendExtra(null, (float) d.rri, null, null, System.currentTimeMillis());
+            }
+        }
+    }
+
     private int accSampleCounter = 0;
 
     private void handleDvLiteSensorData(HuaweiPacket response) {

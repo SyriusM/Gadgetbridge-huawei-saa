@@ -4890,6 +4890,7 @@
     <string name="pref_sleepasandroid_feat_movement">Accelerometer</string>
     <string name="pref_sleepasandroid_feat_heartrate">Heart rate</string>
     <string name="pref_sleepasandroid_feat_heart_rr_intervals">R-R Intervals</string>
+    <string name="pref_sleepasandroid_feat_rr_intervals_screen_on_summary">On this device R-R intervals come from a stress measurement that keeps the screen on for the whole session and drains the battery</string>
     <string name="pref_sleepasandroid_feat_oximetry">Oximetry</string>
     <string name="pref_sleepasandroid_feat_spo2_autofetch_only_summary">This device only provides SpO2 via periodic auto-fetch, not live readings</string>
     <string name="pref_sleepasandroid_spo2_autofetch">SpO2 Auto-fetch Settings</string>

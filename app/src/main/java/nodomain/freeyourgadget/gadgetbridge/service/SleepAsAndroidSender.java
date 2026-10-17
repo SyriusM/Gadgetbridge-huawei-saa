@@ -119,7 +119,9 @@ public class SleepAsAndroidSender {
                     enabled = GBApplication.getPrefs().getBoolean("pref_key_sleepasandroid_feat_hr", true);
                     break;
                 case RR_INTERVALS:
-                    enabled = GBApplication.getPrefs().getBoolean("pref_key_sleepasandroid_feat_rr_intervals", true);
+                    enabled = hasFeature(SleepAsAndroidFeature.RR_INTERVALS_SCREEN_ON)
+                            ? GBApplication.getPrefs().getBoolean("pref_key_sleepasandroid_feat_rr_intervals_screen_on", false)
+                            : GBApplication.getPrefs().getBoolean("pref_key_sleepasandroid_feat_rr_intervals", true);
                     break;
                 case SPO2:
                     enabled = GBApplication.getPrefs().getBoolean("pref_key_sleepasandroid_feat_spo2", true);
