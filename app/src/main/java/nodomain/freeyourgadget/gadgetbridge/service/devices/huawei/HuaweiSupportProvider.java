@@ -2936,10 +2936,34 @@ public class HuaweiSupportProvider {
             case SleepAsAndroidAction.SET_SUSPENDED:
                 sender.pauseTracking(extras.getBoolean("SUSPENDED", false));
                 break;
+            case SleepAsAndroidAction.HINT:
+                triggerSleepAsAndroidHint(extras != null ? extras.getInt("REPEAT", 1) : 1);
+                break;
+            case SleepAsAndroidAction.SHOW_NOTIFICATION: {
+                final NotificationSpec spec = new NotificationSpec();
+                spec.setTitle(extras != null ? extras.getString("TITLE") : null);
+                spec.setBody(extras != null ? extras.getString("TEXT") : null);
+                onNotification(spec);
+                break;
+            }
             default:
                 LOG.warn("Unknown SleepAsAndroid action: " + action);
                 break;
         }
+    }
+
+    /**
+     * Sleep as Android hints (lucid dreaming cues, anti-snoring) should be a gentle buzz, so send
+     * a short notification, which vibrates once, instead of the strong find device vibration.
+     */
+    private void triggerSleepAsAndroidHint(int repeat) {
+        if (repeat <= 0) {
+            return;
+        }
+        LOG.info("Sleep as Android hint, repeat {}", repeat);
+        final NotificationSpec spec = new NotificationSpec();
+        spec.setTitle("Sleep as Android");
+        onNotification(spec);
     }
 
     public void onAddCalendarEvent(final CalendarEventSpec calendarEventSpec) {
