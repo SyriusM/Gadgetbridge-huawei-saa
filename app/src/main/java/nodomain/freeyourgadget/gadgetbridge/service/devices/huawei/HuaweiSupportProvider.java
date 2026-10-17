@@ -179,6 +179,7 @@ import nodomain.freeyourgadget.gadgetbridge.service.devices.huawei.requests.Send
 import nodomain.freeyourgadget.gadgetbridge.service.devices.huawei.requests.SendSetContactsRequest;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.huawei.requests.SendNotifyHeartRateCapabilityRequest;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.huawei.requests.SendDvLiteSensorControlRequest;
+import nodomain.freeyourgadget.gadgetbridge.service.devices.huawei.requests.SendHROpenCloseRequest;
 import nodomain.freeyourgadget.gadgetbridge.devices.huawei.packets.DvLiteSensor;
 import android.os.SystemClock;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.huawei.requests.SendNotifyRestHeartRateCapabilityRequest;
@@ -302,6 +303,27 @@ public class HuaweiSupportProvider {
         lastDvLiteHrDataMs = SystemClock.elapsedRealtime();
     }
 
+    // RR intervals come from the band's stress measurement (0x19/0x05, opened with 0x19/0x01). It
+    // streams until closed and keeps the measurement screen on meanwhile, hence opt-in.
+    private static final byte RRI_OPEN = 3;
+    private static final byte RRI_CLOSE = 4;
+    private static final long RRI_STALE_MS = 30_000L;
+    private volatile long lastRriDataMs = 0;
+    private boolean rriActive = false;
+
+    public void onRriData() {
+        lastRriDataMs = SystemClock.elapsedRealtime();
+    }
+
+    private void sendRriOpenClose(byte type) {
+        try {
+            new SendHROpenCloseRequest(this, type).doPerform();
+            LOG.info("RRI stream {} sent", type == RRI_OPEN ? "open" : "close");
+        } catch (Exception e) {
+            LOG.warn("RRI stream {} failed: {}", type, e.getMessage());
+        }
+    }
+
     private void sendDvLiteSensorControl(int sensorId, int rate, String method) {
         try {
             new SendDvLiteSensorControlRequest(this, sensorId, ++dvLiteSeq, rate, method).doPerform();
@@ -324,6 +346,10 @@ public class HuaweiSupportProvider {
                     sendDvLiteSensorControl(DvLiteSensor.SENSOR_ID_HR, DvLiteSensor.RATE_HIGH, DvLiteSensor.METHOD_ENABLE);
                     lastDvLiteHrDataMs = now;
                 }
+                if (rriActive && now - lastRriDataMs > RRI_STALE_MS) {
+                    sendRriOpenClose(RRI_OPEN);
+                    lastRriDataMs = now;
+                }
                 handler.postDelayed(this, 3000L);
             }
         }
@@ -343,6 +369,11 @@ public class HuaweiSupportProvider {
             sendDvLiteSensorControl(DvLiteSensor.SENSOR_ID_HR, DvLiteSensor.RATE_HIGH, DvLiteSensor.METHOD_ENABLE);
             lastDvLiteHrDataMs = now;
         }
+        rriActive = sleepAsAndroidSender != null && sleepAsAndroidSender.isFeatureEnabled(SleepAsAndroidFeature.RR_INTERVALS);
+        if (rriActive) {
+            sendRriOpenClose(RRI_OPEN);
+            lastRriDataMs = now;
+        }
         if (handler != null) {
             handler.removeCallbacks(sleepTrackingPollingRunner);
             handler.postDelayed(sleepTrackingPollingRunner, 2000L);
@@ -357,6 +388,10 @@ public class HuaweiSupportProvider {
         if (dvLiteHrActive) {
             sendDvLiteSensorControl(DvLiteSensor.SENSOR_ID_HR, DvLiteSensor.RATE_HIGH, DvLiteSensor.METHOD_DISABLE);
             dvLiteHrActive = false;
+        }
+        if (rriActive) {
+            sendRriOpenClose(RRI_CLOSE);
+            rriActive = false;
         }
     }
 
