@@ -369,6 +369,10 @@ public class HuaweiSupportProvider {
             sendDvLiteSensorControl(DvLiteSensor.SENSOR_ID_HR, DvLiteSensor.RATE_HIGH, DvLiteSensor.METHOD_ENABLE);
             lastDvLiteHrDataMs = now;
         }
+        // SpO2 is fetched from the band's minute records, so it also follows the preference.
+        if (sleepAsAndroidSender != null && sleepAsAndroidSender.isFeatureEnabled(SleepAsAndroidFeature.SPO2)) {
+            sleepAsAndroidSender.requestOximetry();
+        }
         rriActive = sleepAsAndroidSender != null && sleepAsAndroidSender.isFeatureEnabled(SleepAsAndroidFeature.RR_INTERVALS);
         if (rriActive) {
             sendRriOpenClose(RRI_OPEN);
@@ -1733,7 +1737,51 @@ public class HuaweiSupportProvider {
         }
     }
 
+    // Window of minute records read per SpO2 auto-fetch. The band measures SpO2 about every 10 min
+    // at night, so 15 min covers one measurement even when a fetch is skipped.
+    private static final int SAA_SPO2_FETCH_WINDOW_S = 15 * 60;
+    // The shared auto-fetch interval defaults to 60 s; more often than this only costs battery here.
+    private static final long SAA_SPO2_MIN_FETCH_INTERVAL_MS = 5 * 60_000L;
+    private long lastSpo2FetchMs = 0;
+    private int lastForwardedSpo2Timestamp = 0;
+
+    /**
+     * Reads the recent minute records only, instead of the full activity sync, which also downloads
+     * TruSleep, stress and ECG files and is too heavy to repeat during the night.
+     */
+    private void fetchSpo2ForSleepAsAndroid() {
+        if (syncState.isSyncActive() || gbDevice.isBusy()) {
+            LOG.debug("Skipping SpO2 fetch for Sleep as Android, a sync is running");
+            return;
+        }
+        final long now = SystemClock.elapsedRealtime();
+        if (lastSpo2FetchMs != 0 && now - lastSpo2FetchMs < SAA_SPO2_MIN_FETCH_INTERVAL_MS) {
+            return;
+        }
+        lastSpo2FetchMs = now;
+        LOG.debug("Fetching SpO2 for Sleep as Android");
+        final int end = (int) (System.currentTimeMillis() / 1000);
+        try {
+            new GetStepDataCountRequest(this, end - SAA_SPO2_FETCH_WINDOW_S, end).setSpo2Only().doPerform();
+        } catch (IOException e) {
+            LOG.error("Failed to fetch SpO2 for Sleep as Android", e);
+        }
+    }
+
+    public void forwardSpo2ToSleepAsAndroid(int timestamp, int spo2) {
+        if (sleepAsAndroidSender == null || spo2 <= 0 || timestamp <= lastForwardedSpo2Timestamp) {
+            return;
+        }
+        lastForwardedSpo2Timestamp = timestamp;
+        sleepAsAndroidSender.sendExtra(null, null, (float) spo2, null, timestamp * 1000L);
+    }
+
     public void onFetchRecordedData(int dataTypes) {
+        // Sleep as Android auto-fetch asks for SpO2 alone.
+        if (dataTypes == RecordedDataTypes.TYPE_SPO2) {
+            fetchSpo2ForSleepAsAndroid();
+            return;
+        }
         for (int i = 1; i > -1; i <<= 1) {
             if ((dataTypes & i) != 0) {
                 switch (i) {

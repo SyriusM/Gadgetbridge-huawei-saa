@@ -25,6 +25,15 @@ import nodomain.freeyourgadget.gadgetbridge.service.devices.huawei.HuaweiSupport
 public class GetStepDataCountRequest extends Request {
     private int start = 0;
     private int end = 0;
+    private boolean spo2Only = false;
+
+    /**
+     * Only forward SpO2 to Sleep as Android, without storing the records.
+     */
+    public GetStepDataCountRequest setSpo2Only() {
+        this.spo2Only = true;
+        return this;
+    }
 
     public GetStepDataCountRequest(HuaweiSupportProvider support, int start, int end) {
         super(support);
@@ -54,6 +63,7 @@ public class GetStepDataCountRequest extends Request {
 
         if (count > 0) {
             GetStepDataRequest nextRequest = new GetStepDataRequest(supportProvider, count, (short) 0);
+            nextRequest.spo2Only = this.spo2Only;
             nextRequest.setFinalizeReq(this.finalizeReq);
             this.nextRequest(nextRequest);
         }

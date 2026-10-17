@@ -58,7 +58,9 @@ public abstract class HuaweiLECoordinator extends HuaweiCoordinator {
                 nodomain.freeyourgadget.gadgetbridge.devices.SleepAsAndroidFeature.NOTIFICATIONS,
                 nodomain.freeyourgadget.gadgetbridge.devices.SleepAsAndroidFeature.ALARMS,
                 nodomain.freeyourgadget.gadgetbridge.devices.SleepAsAndroidFeature.RR_INTERVALS,
-                nodomain.freeyourgadget.gadgetbridge.devices.SleepAsAndroidFeature.RR_INTERVALS_SCREEN_ON
+                nodomain.freeyourgadget.gadgetbridge.devices.SleepAsAndroidFeature.RR_INTERVALS_SCREEN_ON,
+                nodomain.freeyourgadget.gadgetbridge.devices.SleepAsAndroidFeature.SPO2,
+                nodomain.freeyourgadget.gadgetbridge.devices.SleepAsAndroidFeature.SPO2_AUTOFETCH
         );
     }
 }

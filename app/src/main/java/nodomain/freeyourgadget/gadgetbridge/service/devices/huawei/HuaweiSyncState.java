@@ -26,7 +26,7 @@ class HuaweiSyncState {
         this.supportProvider = supportProvider;
     }
 
-    private boolean isSyncActive() {
+    public boolean isSyncActive() {
         return activitySync || p2pSync || stressSync || ecgSync || workoutSync || workoutGpsDownload != 0;
     }
 
