@@ -520,6 +520,20 @@ public class SleepAsAndroidSender {
         }
     }
 
+    /**
+     * Forward SpO2 for this session even though Sleep as Android did not ask for it, for devices
+     * that only deliver it through auto-fetch and should do so whenever the user enabled it here.
+     */
+    public void requestOximetry() {
+        if (!oximetryRequested) {
+            LOG.debug("Oximetry enabled for this session by the Gadgetbridge preference");
+            oximetryRequested = true;
+            if (trackingOngoing) {
+                enableSpo2AutoFetch(true);
+            }
+        }
+    }
+
     public boolean isOximetryRequested() {
         return oximetryRequested;
     }
