@@ -289,9 +289,9 @@ public class HuaweiSupportProvider {
     private boolean dvLiteHrActive = false;
     private static final long DVLITE_ACC_STALE_MS = 10_000L;
     // Band 9 measures HR in bursts like its own spot check: ~14 s warm-up, ~7 readings at 1/s, then
-    // the LED goes off. Re-enabling 30 s after the last reading gives one burst per ~50 s, which is
+    // the LED goes off. Re-enabling 5 min after the last reading gives one burst per ~5 min, which is
     // enough for sleep tracking and keeps the LED (and battery drain) mostly off.
-    private static final long DVLITE_HR_STALE_MS = 30_000L;
+    private static final long DVLITE_HR_STALE_MS = 300_000L;
 
     public void onDvLiteAccData() {
         lastDvLiteAccDataMs = SystemClock.elapsedRealtime();
