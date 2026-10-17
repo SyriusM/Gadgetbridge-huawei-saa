@@ -126,6 +126,7 @@ import nodomain.freeyourgadget.gadgetbridge.model.MusicSpec;
 import nodomain.freeyourgadget.gadgetbridge.model.MusicStateSpec;
 import nodomain.freeyourgadget.gadgetbridge.model.NavigationInfoSpec;
 import nodomain.freeyourgadget.gadgetbridge.model.NotificationSpec;
+import nodomain.freeyourgadget.gadgetbridge.model.NotificationType;
 import nodomain.freeyourgadget.gadgetbridge.model.RecordedDataTypes;
 import nodomain.freeyourgadget.gadgetbridge.model.WeatherSpec;
 
@@ -2941,9 +2942,11 @@ public class HuaweiSupportProvider {
                 break;
             case SleepAsAndroidAction.SHOW_NOTIFICATION: {
                 final NotificationSpec spec = new NotificationSpec();
+                spec.setType(NotificationType.UNKNOWN);
                 spec.setTitle(extras != null ? extras.getString("TITLE") : null);
                 spec.setBody(extras != null ? extras.getString("TEXT") : null);
-                onNotification(spec);
+                // Part of sleep tracking, so not gated by the phone notification toggle.
+                huaweiNotificationsManager.onNotification(spec);
                 break;
             }
             default:
@@ -2962,8 +2965,9 @@ public class HuaweiSupportProvider {
         }
         LOG.info("Sleep as Android hint, repeat {}", repeat);
         final NotificationSpec spec = new NotificationSpec();
+        spec.setType(NotificationType.UNKNOWN);
         spec.setTitle("Sleep as Android");
-        onNotification(spec);
+        huaweiNotificationsManager.onNotification(spec);
     }
 
     public void onAddCalendarEvent(final CalendarEventSpec calendarEventSpec) {
