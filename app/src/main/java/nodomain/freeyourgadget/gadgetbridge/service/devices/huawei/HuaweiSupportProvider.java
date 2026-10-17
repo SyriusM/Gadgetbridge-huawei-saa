@@ -2937,6 +2937,15 @@ public class HuaweiSupportProvider {
             case SleepAsAndroidAction.SET_SUSPENDED:
                 sender.pauseTracking(extras.getBoolean("SUSPENDED", false));
                 break;
+            case SleepAsAndroidAction.START_ALARM:
+                startSleepAsAndroidAlarm(extras != null ? extras.getInt("DELAY", 0) : 0);
+                break;
+            case SleepAsAndroidAction.STOP_ALARM:
+                stopSleepAsAndroidAlarm();
+                break;
+            case SleepAsAndroidAction.UPDATE_ALARM:
+                // The alarm lives in Sleep as Android, which sends START_ALARM when it rings.
+                break;
             case SleepAsAndroidAction.HINT:
                 triggerSleepAsAndroidHint(extras != null ? extras.getInt("REPEAT", 1) : 1);
                 break;
@@ -2959,6 +2968,39 @@ public class HuaweiSupportProvider {
      * Sleep as Android hints (lucid dreaming cues, anti-snoring) should be a gentle buzz, so send
      * a short notification, which vibrates once, instead of the strong find device vibration.
      */
+    private static final long SAA_ALARM_BUZZ_INTERVAL_MS = 5_000L;
+    private static final long SAA_ALARM_MAX_MS = 10 * 60_000L;
+    private long saaAlarmEndMs = 0;
+
+    private final Runnable saaAlarmBuzz = new Runnable() {
+        @Override
+        public void run() {
+            if (SystemClock.elapsedRealtime() > saaAlarmEndMs) {
+                LOG.info("Sleep as Android alarm vibration timed out");
+                return;
+            }
+            triggerSleepAsAndroidHint(1);
+            handler.postDelayed(this, SAA_ALARM_BUZZ_INTERVAL_MS);
+        }
+    };
+
+    /** Gentle repeated buzz until STOP_ALARM; DELAY -1 means SaA does not want the watch to ring. */
+    private void startSleepAsAndroidAlarm(int delayMs) {
+        stopSleepAsAndroidAlarm();
+        if (delayMs < 0 || handler == null) {
+            return;
+        }
+        LOG.info("Sleep as Android alarm, vibration in {} ms", delayMs);
+        saaAlarmEndMs = SystemClock.elapsedRealtime() + delayMs + SAA_ALARM_MAX_MS;
+        handler.postDelayed(saaAlarmBuzz, delayMs);
+    }
+
+    private void stopSleepAsAndroidAlarm() {
+        if (handler != null) {
+            handler.removeCallbacks(saaAlarmBuzz);
+        }
+    }
+
     private static final long SAA_HINT_REMOVE_DELAY_MS = 2000L;
 
     private void triggerSleepAsAndroidHint(int repeat) {
