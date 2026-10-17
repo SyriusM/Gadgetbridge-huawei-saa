@@ -882,6 +882,8 @@ public class AsynchronousResponse {
         }
     }
 
+    private static final int ACC_DECIMATION = 4;
+
     private void handleDvLiteSensorData(HuaweiPacket response) {
         if (response.serviceId != DvLiteSensor.id || response.commandId != DvLiteSensor.SensorData.id || response.getTlv() == null) {
             return;
@@ -918,8 +920,10 @@ public class AsynchronousResponse {
         if (sender == null || !sender.acceptsAccelSamples()) {
             return;
         }
+        // The band streams ~100 Hz and SaA sums sample magnitudes per 10 s window, so the sums
+        // came out ~4x larger than from ~25 Hz devices. Keep every 4th sample (~25 Hz).
         final short[] xyz = data.xyz;
-        for (int i = 0; i + 2 < xyz.length; i += 3) {
+        for (int i = 0; i + 2 < xyz.length; i += 3 * ACC_DECIMATION) {
             sender.submitAccelSample(
                     xyz[i] * DvLiteSensor.ACC_RESOLUTION,
                     xyz[i + 1] * DvLiteSensor.ACC_RESOLUTION,
