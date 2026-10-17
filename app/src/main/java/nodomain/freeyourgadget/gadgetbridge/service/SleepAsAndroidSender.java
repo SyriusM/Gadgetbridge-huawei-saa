@@ -252,15 +252,19 @@ public class SleepAsAndroidSender {
             return;
         }
 
-        final int intervalSeconds = GBApplication.getPrefs().getInt("pref_key_sleepasandroid_spo2_autofetch_interval", 60);
+        final int intervalSeconds = Math.max(
+                GBApplication.getPrefs().getInt("pref_key_sleepasandroid_spo2_autofetch_interval", 60),
+                device.getDeviceCoordinator().getSleepAsAndroidSpo2MinFetchIntervalSeconds(device));
         if (intervalSeconds <= 0) {
             LOG.warn("Invalid spo2 auto-fetch interval {}, not starting", intervalSeconds);
             return;
         }
 
-        final boolean allDayMonitoringEnabled = GBApplication.getDevicePrefs(device).getBoolean(DeviceSettingsPreferenceConst.PREF_SPO2_ALL_DAY_MONITORING, false);
+        final Prefs devicePrefs = GBApplication.getDevicePrefs(device);
+        final boolean allDayMonitoringEnabled = devicePrefs.getBoolean(DeviceSettingsPreferenceConst.PREF_SPO2_ALL_DAY_MONITORING, false);
         LOG.debug("Starting spo2 auto-fetch for sleep as android, every {} seconds (spo2_all_day_monitoring_enabled={})", intervalSeconds, allDayMonitoringEnabled);
-        if (!allDayMonitoringEnabled) {
+        // Only warn for devices that use this setting, others (e.g. Huawei) have their own
+        if (devicePrefs.contains(DeviceSettingsPreferenceConst.PREF_SPO2_ALL_DAY_MONITORING) && !allDayMonitoringEnabled) {
             LOG.warn("SpO2 all-day monitoring is disabled on the device - the watch will likely not record any new normal spo2 samples for the auto-fetch to pick up");
         }
 
@@ -517,6 +521,20 @@ public class SleepAsAndroidSender {
         if (!heartRateRequested) {
             LOG.debug("Heart rate enabled for this session by the Gadgetbridge preference");
             heartRateRequested = true;
+        }
+    }
+
+    /**
+     * Forward SpO2 for this session even though Sleep as Android did not ask for it, for devices
+     * that only deliver it through auto-fetch and should do so whenever the user enabled it here.
+     */
+    public void requestOximetry() {
+        if (!oximetryRequested) {
+            LOG.debug("Oximetry enabled for this session by the Gadgetbridge preference");
+            oximetryRequested = true;
+            if (trackingOngoing) {
+                enableSpo2AutoFetch(true);
+            }
         }
     }
 

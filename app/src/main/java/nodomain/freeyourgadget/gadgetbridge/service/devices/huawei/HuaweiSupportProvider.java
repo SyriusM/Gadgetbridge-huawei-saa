@@ -291,9 +291,9 @@ public class HuaweiSupportProvider {
     private boolean dvLiteHrActive = false;
     private static final long DVLITE_ACC_STALE_MS = 10_000L;
     // Band 9 measures HR in bursts like its own spot check: ~14 s warm-up, ~7 readings at 1/s, then
-    // the LED goes off. Re-enabling 5 min after the last reading gives one burst per ~5 min, which is
-    // enough for sleep tracking and keeps the LED (and battery drain) mostly off.
-    private static final long DVLITE_HR_STALE_MS = 300_000L;
+    // the LED goes off. Re-enabling 3 min after the last reading gives one burst per ~3 min, which
+    // keeps the LED mostly off; a night at 5 min cost ~5% battery, so the denser HR is affordable.
+    private static final long DVLITE_HR_STALE_MS = 180_000L;
 
     public void onDvLiteAccData() {
         lastDvLiteAccDataMs = SystemClock.elapsedRealtime();
@@ -339,6 +339,7 @@ public class HuaweiSupportProvider {
             if (sleepAsAndroidSender != null && sleepAsAndroidSender.isTrackingOngoing()) {
                 final long now = SystemClock.elapsedRealtime();
                 if (now - lastDvLiteAccDataMs > DVLITE_ACC_STALE_MS) {
+                    LOG.warn("Accelerometer silent for {} ms, re-enabling", now - lastDvLiteAccDataMs);
                     sendDvLiteSensorControl(DvLiteSensor.SENSOR_ID_ACC, DvLiteSensor.RATE_MID, DvLiteSensor.METHOD_ENABLE);
                     lastDvLiteAccDataMs = now;
                 }
@@ -368,6 +369,10 @@ public class HuaweiSupportProvider {
         if (dvLiteHrActive) {
             sendDvLiteSensorControl(DvLiteSensor.SENSOR_ID_HR, DvLiteSensor.RATE_HIGH, DvLiteSensor.METHOD_ENABLE);
             lastDvLiteHrDataMs = now;
+        }
+        // SpO2 is fetched from the band's minute records, so it also follows the preference.
+        if (sleepAsAndroidSender != null && sleepAsAndroidSender.isFeatureEnabled(SleepAsAndroidFeature.SPO2)) {
+            sleepAsAndroidSender.requestOximetry();
         }
         rriActive = sleepAsAndroidSender != null && sleepAsAndroidSender.isFeatureEnabled(SleepAsAndroidFeature.RR_INTERVALS);
         if (rriActive) {
@@ -1736,7 +1741,43 @@ public class HuaweiSupportProvider {
         }
     }
 
+    // Window of minute records read per SpO2 auto-fetch. The band measures SpO2 about every 10 min
+    // at night, so 15 min covers one measurement even when a fetch is skipped.
+    private static final int SAA_SPO2_FETCH_WINDOW_S = 15 * 60;
+    private int lastForwardedSpo2Timestamp = 0;
+
+    /**
+     * Reads the recent minute records only, instead of the full activity sync, which also downloads
+     * TruSleep, stress and ECG files and is too heavy to repeat during the night.
+     */
+    private void fetchSpo2ForSleepAsAndroid() {
+        if (syncState.isSyncActive() || gbDevice.isBusy()) {
+            LOG.debug("Skipping SpO2 fetch for Sleep as Android, a sync is running");
+            return;
+        }
+        LOG.debug("Fetching SpO2 for Sleep as Android");
+        final int end = (int) (System.currentTimeMillis() / 1000);
+        try {
+            new GetStepDataCountRequest(this, end - SAA_SPO2_FETCH_WINDOW_S, end).setSpo2Only().doPerform();
+        } catch (IOException e) {
+            LOG.error("Failed to fetch SpO2 for Sleep as Android", e);
+        }
+    }
+
+    public void forwardSpo2ToSleepAsAndroid(int timestamp, int spo2) {
+        if (sleepAsAndroidSender == null || spo2 <= 0 || timestamp <= lastForwardedSpo2Timestamp) {
+            return;
+        }
+        lastForwardedSpo2Timestamp = timestamp;
+        sleepAsAndroidSender.sendExtra(null, null, (float) spo2, null, timestamp * 1000L);
+    }
+
     public void onFetchRecordedData(int dataTypes) {
+        // Sleep as Android auto-fetch asks for SpO2 alone.
+        if (dataTypes == RecordedDataTypes.TYPE_SPO2) {
+            fetchSpo2ForSleepAsAndroid();
+            return;
+        }
         for (int i = 1; i > -1; i <<= 1) {
             if ((dataTypes & i) != 0) {
                 switch (i) {

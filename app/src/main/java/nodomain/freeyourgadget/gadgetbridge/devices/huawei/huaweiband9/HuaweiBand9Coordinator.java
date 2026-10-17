@@ -46,4 +46,20 @@ public class HuaweiBand9Coordinator extends HuaweiLECoordinator {
     public DeviceCoordinator.DeviceKind getDeviceKind(@NonNull GBDevice device) {
         return DeviceCoordinator.DeviceKind.FITNESS_BAND;
     }
+
+    @Override
+    protected boolean supportsDvLiteSleepTracking(@NonNull GBDevice device) {
+        return true;
+    }
+
+    @Override
+    public int[] getSupportedDeviceSpecificExperimentalSettings(final GBDevice device) {
+        return new int[0];
+    }
+
+    @Override
+    public int getSleepAsAndroidSpo2MinFetchIntervalSeconds(@NonNull GBDevice device) {
+        // The band measures SpO2 about every 10 min at night, so fetching more often only costs battery.
+        return 300;
+    }
 }

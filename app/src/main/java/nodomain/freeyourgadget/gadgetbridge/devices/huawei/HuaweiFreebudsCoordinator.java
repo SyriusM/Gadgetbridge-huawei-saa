@@ -36,6 +36,16 @@ import nodomain.freeyourgadget.gadgetbridge.util.preferences.DevicePrefs;
 public abstract class HuaweiFreebudsCoordinator extends HuaweiBRCoordinator {
 
     @Override
+    protected boolean supportsDvLiteSleepTracking(@NonNull final GBDevice device) {
+        return false;
+    }
+
+    @Override
+    public int[] getSupportedDeviceSpecificExperimentalSettings(final GBDevice device) {
+        return new int[0];
+    }
+
+    @Override
     public int getDefaultIconResource() {
         return R.drawable.ic_device_nothingear;
     }
