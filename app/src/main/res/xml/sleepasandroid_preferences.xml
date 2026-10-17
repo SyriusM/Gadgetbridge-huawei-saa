@@ -83,6 +83,15 @@
             android:enabled="false">
         </SwitchPreferenceCompat>
         <SwitchPreferenceCompat
+            android:key="pref_key_sleepasandroid_feat_rr_intervals_screen_on"
+            android:title="@string/pref_sleepasandroid_feat_heart_rr_intervals"
+            android:summary="@string/pref_sleepasandroid_feat_rr_intervals_screen_on_summary"
+            app:iconSpaceReserved="false"
+            android:defaultValue="false"
+            android:enabled="false"
+            app:isPreferenceVisible="false">
+        </SwitchPreferenceCompat>
+        <SwitchPreferenceCompat
             android:key="pref_key_sleepasandroid_feat_oximetry"
             android:title="@string/pref_sleepasandroid_feat_oximetry"
             app:iconSpaceReserved="false"
