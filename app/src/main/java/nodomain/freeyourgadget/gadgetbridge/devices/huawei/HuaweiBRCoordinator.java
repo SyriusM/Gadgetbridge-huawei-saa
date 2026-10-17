@@ -49,7 +49,8 @@ public abstract class HuaweiBRCoordinator extends HuaweiCoordinator {
         return java.util.EnumSet.of(
                 nodomain.freeyourgadget.gadgetbridge.devices.SleepAsAndroidFeature.HEART_RATE,
                 nodomain.freeyourgadget.gadgetbridge.devices.SleepAsAndroidFeature.ACCELEROMETER,
-                nodomain.freeyourgadget.gadgetbridge.devices.SleepAsAndroidFeature.NOTIFICATIONS
+                nodomain.freeyourgadget.gadgetbridge.devices.SleepAsAndroidFeature.NOTIFICATIONS,
+                nodomain.freeyourgadget.gadgetbridge.devices.SleepAsAndroidFeature.ALARMS
         );
     }
 }
