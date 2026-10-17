@@ -1221,6 +1221,7 @@ public class HuaweiSupportProvider {
                 @Override
                 public void call() {
                     gbDevice.setUpdateState(GBDevice.State.INITIALIZED, getContext());
+                    resumeSleepAsAndroidTrackingAfterReconnect();
 
                     if (getDeviceState().supportsP2PService()) {
                         if (getDeviceState().supportsCalendar()) {
@@ -2889,6 +2890,17 @@ public class HuaweiSupportProvider {
         }
     }
 
+    // Survives the provider being recreated on reconnect, so tracking resumes by itself.
+    private static volatile String saaTrackingAddress = null;
+
+    private void resumeSleepAsAndroidTrackingAfterReconnect() {
+        if (gbDevice == null || !gbDevice.getAddress().equals(saaTrackingAddress)) {
+            return;
+        }
+        LOG.info("Resuming Sleep as Android tracking after reconnect");
+        onSleepAsAndroidAction(SleepAsAndroidAction.START_TRACKING, new Bundle());
+    }
+
     public SleepAsAndroidSender getSleepAsAndroidSender() {
         if (sleepAsAndroidSender == null && gbDevice != null) {
             sleepAsAndroidSender = new SleepAsAndroidSender(gbDevice);
@@ -2922,11 +2934,13 @@ public class HuaweiSupportProvider {
                 break;
             case SleepAsAndroidAction.START_TRACKING:
                 lastStartTrackingTimestamp = System.currentTimeMillis();
+                saaTrackingAddress = gbDevice.getAddress();
                 // Extras carry which sensors SaA wants; without them heart rate is never forwarded.
                 sender.startTracking(extras);
                 startSleepTrackingPollingRunner();
                 break;
             case SleepAsAndroidAction.STOP_TRACKING:
+                saaTrackingAddress = null;
                 stopSleepTrackingPollingRunner();
                 sender.stopTracking();
                 break;
@@ -3052,6 +3066,14 @@ public class HuaweiSupportProvider {
 
     public void dispose() {
         stopBatteryRunnerDelayed();
+        // A reconnect creates a new provider; the old one must not keep polling a dead queue.
+        if (handler != null) {
+            handler.removeCallbacks(sleepTrackingPollingRunner);
+            handler.removeCallbacks(saaAlarmBuzz);
+        }
+        if (sleepAsAndroidSender != null && sleepAsAndroidSender.isTrackingOngoing()) {
+            sleepAsAndroidSender.stopTracking();
+        }
         huaweiFileDownloadManager.dispose();
         huaweiP2PManager.unregisterAllService();
         huaweiDataSyncManager.unregisterAll();
