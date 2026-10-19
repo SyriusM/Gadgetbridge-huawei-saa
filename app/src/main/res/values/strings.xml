@@ -4895,6 +4895,8 @@
     <string name="pref_sleepasandroid_feat_spo2_autofetch_only_summary">This device only provides SpO2 via periodic auto-fetch, not live readings</string>
     <string name="pref_sleepasandroid_spo2_autofetch">SpO2 Auto-fetch Settings</string>
     <string name="pref_sleepasandroid_spo2_autofetch_interval">Fetch interval (seconds)</string>
+    <string name="pref_huawei_experimental_sleep_as_android_summary">Only tested on the Huawei Band 9. On other models it is unknown whether movement and heart rate reach Sleep as Android, how much battery it costs, or how the device reacts</string>
+    <string name="pref_sleepasandroid_spo2_autofetch_interval_min_summary">This device fetches at most every %d seconds</string>
     <string name="pref_title_huawei_account">Huawei Account</string>
     <string name="pref_summary_huawei_account">Huawei account used in pairing process. Setting it allows to pair without factory reset.</string>
     <string name="watchface_resolution_doesnt_match">Watchface resolution doesn\'t match device screen. Watchface is %1$s device screen is %2$s</string>

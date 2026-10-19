@@ -291,9 +291,9 @@ public class HuaweiSupportProvider {
     private boolean dvLiteHrActive = false;
     private static final long DVLITE_ACC_STALE_MS = 10_000L;
     // Band 9 measures HR in bursts like its own spot check: ~14 s warm-up, ~7 readings at 1/s, then
-    // the LED goes off. Re-enabling 5 min after the last reading gives one burst per ~5 min, which is
-    // enough for sleep tracking and keeps the LED (and battery drain) mostly off.
-    private static final long DVLITE_HR_STALE_MS = 300_000L;
+    // the LED goes off. Re-enabling 3 min after the last reading gives one burst per ~3 min, which
+    // keeps the LED mostly off; a night at 5 min cost ~5% battery, so the denser HR is affordable.
+    private static final long DVLITE_HR_STALE_MS = 180_000L;
 
     public void onDvLiteAccData() {
         lastDvLiteAccDataMs = SystemClock.elapsedRealtime();
@@ -339,6 +339,7 @@ public class HuaweiSupportProvider {
             if (sleepAsAndroidSender != null && sleepAsAndroidSender.isTrackingOngoing()) {
                 final long now = SystemClock.elapsedRealtime();
                 if (now - lastDvLiteAccDataMs > DVLITE_ACC_STALE_MS) {
+                    LOG.warn("Accelerometer silent for {} ms, re-enabling", now - lastDvLiteAccDataMs);
                     sendDvLiteSensorControl(DvLiteSensor.SENSOR_ID_ACC, DvLiteSensor.RATE_MID, DvLiteSensor.METHOD_ENABLE);
                     lastDvLiteAccDataMs = now;
                 }
@@ -1740,9 +1741,6 @@ public class HuaweiSupportProvider {
     // Window of minute records read per SpO2 auto-fetch. The band measures SpO2 about every 10 min
     // at night, so 15 min covers one measurement even when a fetch is skipped.
     private static final int SAA_SPO2_FETCH_WINDOW_S = 15 * 60;
-    // The shared auto-fetch interval defaults to 60 s; more often than this only costs battery here.
-    private static final long SAA_SPO2_MIN_FETCH_INTERVAL_MS = 5 * 60_000L;
-    private long lastSpo2FetchMs = 0;
     private int lastForwardedSpo2Timestamp = 0;
 
     /**
@@ -1754,11 +1752,6 @@ public class HuaweiSupportProvider {
             LOG.debug("Skipping SpO2 fetch for Sleep as Android, a sync is running");
             return;
         }
-        final long now = SystemClock.elapsedRealtime();
-        if (lastSpo2FetchMs != 0 && now - lastSpo2FetchMs < SAA_SPO2_MIN_FETCH_INTERVAL_MS) {
-            return;
-        }
-        lastSpo2FetchMs = now;
         LOG.debug("Fetching SpO2 for Sleep as Android");
         final int end = (int) (System.currentTimeMillis() / 1000);
         try {

@@ -44,23 +44,4 @@ public abstract class HuaweiLECoordinator extends HuaweiCoordinator {
     public Class<? extends DeviceSupport> getDeviceSupportClass(final GBDevice device) {
         return HuaweiLESupport.class;
     }
-
-    @Override
-    public boolean supportsSleepAsAndroid(@NonNull final GBDevice device) {
-        return true;
-    }
-
-    @Override
-    public java.util.Set<nodomain.freeyourgadget.gadgetbridge.devices.SleepAsAndroidFeature> getSleepAsAndroidFeatures(@NonNull final GBDevice device) {
-        return java.util.EnumSet.of(
-                nodomain.freeyourgadget.gadgetbridge.devices.SleepAsAndroidFeature.HEART_RATE,
-                nodomain.freeyourgadget.gadgetbridge.devices.SleepAsAndroidFeature.ACCELEROMETER,
-                nodomain.freeyourgadget.gadgetbridge.devices.SleepAsAndroidFeature.NOTIFICATIONS,
-                nodomain.freeyourgadget.gadgetbridge.devices.SleepAsAndroidFeature.ALARMS,
-                nodomain.freeyourgadget.gadgetbridge.devices.SleepAsAndroidFeature.RR_INTERVALS,
-                nodomain.freeyourgadget.gadgetbridge.devices.SleepAsAndroidFeature.RR_INTERVALS_SCREEN_ON,
-                nodomain.freeyourgadget.gadgetbridge.devices.SleepAsAndroidFeature.SPO2,
-                nodomain.freeyourgadget.gadgetbridge.devices.SleepAsAndroidFeature.SPO2_AUTOFETCH
-        );
-    }
 }

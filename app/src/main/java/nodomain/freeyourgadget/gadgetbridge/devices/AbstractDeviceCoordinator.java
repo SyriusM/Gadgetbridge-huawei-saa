@@ -1115,6 +1115,11 @@ public abstract class AbstractDeviceCoordinator implements DeviceCoordinator {
     }
 
     @Override
+    public int getSleepAsAndroidSpo2MinFetchIntervalSeconds(@NonNull final GBDevice device) {
+        return 0;
+    }
+
+    @Override
     public int[] getSupportedDeviceSpecificConnectionSettings() {
         int[] settings = new int[0];
         ConnectionType connectionType = getConnectionType();

@@ -30,6 +30,9 @@ import org.apache.commons.lang3.ArrayUtils;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import nodomain.freeyourgadget.gadgetbridge.devices.SleepAsAndroidFeature;
+import java.util.Set;
+import java.util.EnumSet;
 import java.util.List;
 
 import de.greenrobot.dao.query.QueryBuilder;
@@ -615,5 +618,42 @@ public abstract class HuaweiCoordinator extends AbstractDeviceCoordinator {
     @Override
     public boolean supportsNavigation(@NonNull final GBDevice device) {
         return HuaweiDeviceStateManager.get(device).supportsNavigation();
+    }
+
+    private static final String PREF_EXPERIMENTAL_SLEEP_AS_ANDROID = "huawei_experimental_sleep_as_android";
+
+    /**
+     * Sleep as Android relies on the DvLite sensor stream, verified only on the models that
+     * override this. Other models can opt in through the experimental settings.
+     */
+    protected boolean supportsDvLiteSleepTracking(@NonNull final GBDevice device) {
+        return experimentalSettingEnabled(device, PREF_EXPERIMENTAL_SLEEP_AS_ANDROID);
+    }
+
+    @Override
+    public int[] getSupportedDeviceSpecificExperimentalSettings(final GBDevice device) {
+        return new int[]{R.xml.devicesettings_huawei_experimental_sleep_as_android};
+    }
+
+    @Override
+    public boolean supportsSleepAsAndroid(@NonNull final GBDevice device) {
+        return supportsDvLiteSleepTracking(device);
+    }
+
+    @Override
+    public Set<SleepAsAndroidFeature> getSleepAsAndroidFeatures(@NonNull final GBDevice device) {
+        if (!supportsDvLiteSleepTracking(device)) {
+            return Collections.emptySet();
+        }
+        return EnumSet.of(
+                SleepAsAndroidFeature.HEART_RATE,
+                SleepAsAndroidFeature.ACCELEROMETER,
+                SleepAsAndroidFeature.NOTIFICATIONS,
+                SleepAsAndroidFeature.ALARMS,
+                SleepAsAndroidFeature.RR_INTERVALS,
+                SleepAsAndroidFeature.RR_INTERVALS_SCREEN_ON,
+                SleepAsAndroidFeature.SPO2,
+                SleepAsAndroidFeature.SPO2_AUTOFETCH
+        );
     }
 }

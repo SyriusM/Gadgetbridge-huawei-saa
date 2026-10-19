@@ -252,7 +252,9 @@ public class SleepAsAndroidSender {
             return;
         }
 
-        final int intervalSeconds = GBApplication.getPrefs().getInt("pref_key_sleepasandroid_spo2_autofetch_interval", 60);
+        final int intervalSeconds = Math.max(
+                GBApplication.getPrefs().getInt("pref_key_sleepasandroid_spo2_autofetch_interval", 60),
+                device.getDeviceCoordinator().getSleepAsAndroidSpo2MinFetchIntervalSeconds(device));
         if (intervalSeconds <= 0) {
             LOG.warn("Invalid spo2 auto-fetch interval {}, not starting", intervalSeconds);
             return;

@@ -985,6 +985,12 @@ public interface DeviceCoordinator {
     Set<SleepAsAndroidFeature> getSleepAsAndroidFeatures(@NonNull final GBDevice device);
 
     /**
+     * Returns the shortest useful SpO2 auto-fetch interval for Sleep as Android, in seconds,
+     * or 0 if the configured interval is always used as is.
+     */
+    int getSleepAsAndroidSpo2MinFetchIntervalSeconds(@NonNull final GBDevice device);
+
+    /**
      * Returns device specific settings related to connection
      *
      * @return int[]
