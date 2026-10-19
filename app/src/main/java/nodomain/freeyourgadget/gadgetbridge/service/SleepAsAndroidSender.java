@@ -260,9 +260,11 @@ public class SleepAsAndroidSender {
             return;
         }
 
-        final boolean allDayMonitoringEnabled = GBApplication.getDevicePrefs(device).getBoolean(DeviceSettingsPreferenceConst.PREF_SPO2_ALL_DAY_MONITORING, false);
+        final Prefs devicePrefs = GBApplication.getDevicePrefs(device);
+        final boolean allDayMonitoringEnabled = devicePrefs.getBoolean(DeviceSettingsPreferenceConst.PREF_SPO2_ALL_DAY_MONITORING, false);
         LOG.debug("Starting spo2 auto-fetch for sleep as android, every {} seconds (spo2_all_day_monitoring_enabled={})", intervalSeconds, allDayMonitoringEnabled);
-        if (!allDayMonitoringEnabled) {
+        // Only warn for devices that use this setting, others (e.g. Huawei) have their own
+        if (devicePrefs.contains(DeviceSettingsPreferenceConst.PREF_SPO2_ALL_DAY_MONITORING) && !allDayMonitoringEnabled) {
             LOG.warn("SpO2 all-day monitoring is disabled on the device - the watch will likely not record any new normal spo2 samples for the auto-fetch to pick up");
         }
 
