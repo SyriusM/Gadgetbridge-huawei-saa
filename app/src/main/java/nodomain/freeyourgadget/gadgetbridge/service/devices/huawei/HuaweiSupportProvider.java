@@ -45,6 +45,7 @@ import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -245,6 +246,7 @@ import nodomain.freeyourgadget.gadgetbridge.service.devices.huawei.requests.GetN
 import nodomain.freeyourgadget.gadgetbridge.service.devices.huawei.requests.SetWorkModeRequest;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.huawei.utils.HuaweiGPSTrackConverter;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.huawei.utils.HuaweiRouteTrack;
+import nodomain.freeyourgadget.gadgetbridge.util.AlarmUtils;
 import nodomain.freeyourgadget.gadgetbridge.util.DateTimeUtils;
 import nodomain.freeyourgadget.gadgetbridge.util.GB;
 import nodomain.freeyourgadget.gadgetbridge.util.MediaManager;
@@ -3061,12 +3063,20 @@ public class HuaweiSupportProvider {
     private static final long SAA_ALARM_BUZZ_INTERVAL_MS = 5_000L;
     private static final long SAA_ALARM_MAX_MS = 10 * 60_000L;
     private long saaAlarmEndMs = 0;
+    /** When the band's own alarm takes over from the buzz, 0 if no band alarm is set. */
+    private long saaBandAlarmDueMs = 0;
 
     private final Runnable saaAlarmBuzz = new Runnable() {
         @Override
         public void run() {
-            if (SystemClock.elapsedRealtime() > saaAlarmEndMs) {
+            final long now = SystemClock.elapsedRealtime();
+            if (now > saaAlarmEndMs) {
                 LOG.info("Sleep as Android alarm vibration timed out");
+                return;
+            }
+            if (saaBandAlarmDueMs > 0 && now >= saaBandAlarmDueMs) {
+                // Notifications on top would cover the band's alarm screen.
+                LOG.info("Sleep as Android alarm handed over to the band alarm");
                 return;
             }
             triggerSleepAsAndroidHint(1);
@@ -3074,13 +3084,28 @@ public class HuaweiSupportProvider {
         }
     };
 
-    /** Gentle repeated buzz until STOP_ALARM; DELAY -1 means SaA does not want the watch to ring. */
+    /**
+     * Ring the band until STOP_ALARM; DELAY -1 means SaA does not want the watch to ring.
+     * <p>
+     * Notifications are muted while the band thinks the user is asleep, so they alone do not wake
+     * anyone. The band's own alarm does, so it is set for the next full minute (the band has no
+     * finer resolution) and the buzz only covers the time until then.
+     */
     private void startSleepAsAndroidAlarm(int delayMs) {
         stopSleepAsAndroidAlarm();
         if (delayMs < 0 || handler == null) {
             return;
         }
         LOG.info("Sleep as Android alarm, vibration in {} ms", delayMs);
+        final long nowMs = System.currentTimeMillis();
+        final Calendar ringAt = Calendar.getInstance();
+        ringAt.setTimeInMillis(nowMs + delayMs);
+        ringAt.set(Calendar.SECOND, 0);
+        ringAt.set(Calendar.MILLISECOND, 0);
+        ringAt.add(Calendar.MINUTE, 1);
+        if (sendSleepAsAndroidBandAlarm(ringAt)) {
+            saaBandAlarmDueMs = SystemClock.elapsedRealtime() + (ringAt.getTimeInMillis() - nowMs);
+        }
         saaAlarmEndMs = SystemClock.elapsedRealtime() + delayMs + SAA_ALARM_MAX_MS;
         handler.postDelayed(saaAlarmBuzz, delayMs);
     }
@@ -3088,6 +3113,58 @@ public class HuaweiSupportProvider {
     private void stopSleepAsAndroidAlarm() {
         if (handler != null) {
             handler.removeCallbacks(saaAlarmBuzz);
+        }
+        if (saaBandAlarmDueMs > 0) {
+            saaBandAlarmDueMs = 0;
+            // Restores the user's alarms, which also removes a band alarm that is ringing.
+            sendSleepAsAndroidBandAlarm(null);
+        }
+    }
+
+    /**
+     * Send the user's event alarms, with the last slot replaced by a one-shot Sleep as Android
+     * alarm if {@code ringAt} is set. Nothing is stored, so the alarm list in Gadgetbridge stays
+     * as the user set it.
+     *
+     * @return whether the alarms were sent
+     */
+    private boolean sendSleepAsAndroidBandAlarm(@Nullable Calendar ringAt) {
+        if (!getDeviceState().supportsEventAlarm()) {
+            return false;
+        }
+        final boolean smartAlarm = getDeviceState().supportsSmartAlarm(getDevice());
+        final int slot = gbDevice.getDeviceCoordinator().getAlarmSlotCount(gbDevice) - 1;
+        if (slot < (smartAlarm ? 1 : 0)) {
+            return false;
+        }
+        final AlarmsRequest request = new AlarmsRequest(this, false);
+        for (Alarm alarm : DBHelper.getAlarms(gbDevice)) {
+            if (smartAlarm && alarm.getPosition() == 0) {
+                continue;
+            }
+            if (ringAt != null && alarm.getPosition() == slot) {
+                if (alarm.getEnabled() && !alarm.getUnused()) {
+                    LOG.warn("Sleep as Android alarm temporarily replaces the alarm in slot {}", slot);
+                }
+                continue;
+            }
+            request.addEventAlarm(alarm, !smartAlarm);
+        }
+        if (ringAt != null) {
+            final Alarm saaAlarm = AlarmUtils.createSingleShot(slot, false, false, ringAt);
+            saaAlarm.setTitle("Sleep as Android");
+            request.addEventAlarm(saaAlarm, !smartAlarm);
+            LOG.info("Setting Sleep as Android band alarm in slot {} at {}:{}", slot,
+                    ringAt.get(Calendar.HOUR_OF_DAY), ringAt.get(Calendar.MINUTE));
+        } else {
+            LOG.info("Removing Sleep as Android band alarm");
+        }
+        try {
+            request.doPerform();
+            return true;
+        } catch (IOException e) {
+            LOG.error("Failed to send Sleep as Android band alarm", e);
+            return false;
         }
     }
 
