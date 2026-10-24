@@ -360,6 +360,7 @@ public class HuaweiSupportProvider {
 
     private void startSleepTrackingPollingRunner() {
         final long now = SystemClock.elapsedRealtime();
+        DvLiteLogFilter.setAccStreaming(true);
         sendDvLiteSensorControl(DvLiteSensor.SENSOR_ID_ACC, DvLiteSensor.RATE_MID, DvLiteSensor.METHOD_ENABLE);
         lastDvLiteAccDataMs = now;
         // Heart rate needs the band's sensor switched on, so follow the Gadgetbridge preference
@@ -392,6 +393,7 @@ public class HuaweiSupportProvider {
             handler.removeCallbacks(sleepTrackingPollingRunner);
         }
         sendDvLiteSensorControl(DvLiteSensor.SENSOR_ID_ACC, DvLiteSensor.RATE_MID, DvLiteSensor.METHOD_DISABLE);
+        DvLiteLogFilter.setAccStreaming(false);
         if (dvLiteHrActive) {
             sendDvLiteSensorControl(DvLiteSensor.SENSOR_ID_HR, DvLiteSensor.RATE_HIGH, DvLiteSensor.METHOD_DISABLE);
             dvLiteHrActive = false;
@@ -3224,6 +3226,7 @@ public class HuaweiSupportProvider {
             handler.removeCallbacks(sleepTrackingPollingRunner);
             handler.removeCallbacks(saaAlarmBuzz);
         }
+        DvLiteLogFilter.setAccStreaming(false);
         if (sleepAsAndroidSender != null && sleepAsAndroidSender.isTrackingOngoing()) {
             sleepAsAndroidSender.stopTracking();
         }
