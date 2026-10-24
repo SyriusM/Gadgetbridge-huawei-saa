@@ -5348,6 +5348,12 @@
         <item quantity="many">%d ćwiczeń</item>
         <item quantity="other">%d ćwiczeń</item>
     </plurals>
+    <string name="pref_sleepasandroid_alarm_max_minutes">Maksymalny czas wibracji alarmu (minuty)</string>
+    <string name="pref_sleepasandroid_feat_rr_intervals_screen_on_summary">Na tym urządzeniu przedziały R-R pochodzą z pomiaru stresu, który przez całą sesję trzyma włączony ekran i rozładowuje baterię</string>
+    <string name="pref_sleepasandroid_spo2_autofetch_interval_min_summary">To urządzenie pobiera dane nie częściej niż co %d sekund</string>
+    <string name="pref_huawei_experimental_sleep_as_android_summary">Testowane tylko na Huawei Band 9. Na innych modelach nie wiadomo, czy ruch i tętno docierają do Sleep as Android, ile baterii to kosztuje ani jak zareaguje urządzenie</string>
     <string name="pref_huawei_sleep_as_android_backup_alarm_title">Zapasowy alarm Sleep as Android</string>
     <string name="pref_huawei_sleep_as_android_backup_alarm_summary">Zapisuje najbliższy alarm Sleep as Android na opasce z 5-minutowym opóźnieniem, żeby opaska obudziła cię nawet przy wyłączonym telefonie. Wyłączenie alarmu w Sleep as Android go usuwa. Używa ostatniego miejsca na alarm w opasce</string>
+    <string name="pref_huawei_wheelchair_mode">Tryb wózka inwalidzkiego</string>
+    <string name="pref_huawei_wheelchair_mode_enable_summary">Na zegarku będzie dostępny trening na wózku, a zapisy aktywności będą śledzić codzienną aktywność, np. pchnięcia wózka. Kroki nie będą liczone.</string>
 </resources>
