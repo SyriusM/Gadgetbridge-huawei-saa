@@ -5348,4 +5348,6 @@
         <item quantity="many">%d ćwiczeń</item>
         <item quantity="other">%d ćwiczeń</item>
     </plurals>
+    <string name="pref_huawei_sleep_as_android_backup_alarm_title">Zapasowy alarm Sleep as Android</string>
+    <string name="pref_huawei_sleep_as_android_backup_alarm_summary">Zapisuje najbliższy alarm Sleep as Android na opasce z 5-minutowym opóźnieniem, żeby opaska obudziła cię nawet przy wyłączonym telefonie. Wyłączenie alarmu w Sleep as Android go usuwa. Używa ostatniego miejsca na alarm w opasce</string>
 </resources>

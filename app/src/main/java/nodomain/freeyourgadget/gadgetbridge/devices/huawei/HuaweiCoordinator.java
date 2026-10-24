@@ -516,6 +516,9 @@ public abstract class HuaweiCoordinator extends AbstractDeviceCoordinator {
         if (deviceState.supportsThreeCircle() || deviceState.supportsThreeCircleLite()) {
             deviceSpecificSettings.addRootScreen(DeviceSpecificSettingsScreen.HEALTH, R.xml.devicesettings_huawei_activity_reminders);
         }
+        if (supportsSleepAsAndroid(device) && deviceState.supportsEventAlarm()) {
+            deviceSpecificSettings.addRootScreen(DeviceSpecificSettingsScreen.HEALTH, R.xml.devicesettings_huawei_sleep_as_android_backup_alarm);
+        }
 
         // Notifications
         final List<Integer> notifications = deviceSpecificSettings.addRootScreen(DeviceSpecificSettingsScreen.NOTIFICATIONS);
@@ -621,6 +624,7 @@ public abstract class HuaweiCoordinator extends AbstractDeviceCoordinator {
     }
 
     private static final String PREF_EXPERIMENTAL_SLEEP_AS_ANDROID = "huawei_experimental_sleep_as_android";
+    public static final String PREF_SLEEP_AS_ANDROID_BACKUP_ALARM = "huawei_sleep_as_android_backup_alarm";
 
     /**
      * Sleep as Android relies on the DvLite sensor stream, verified only on the models that

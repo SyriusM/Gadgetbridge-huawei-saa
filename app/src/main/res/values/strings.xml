@@ -4896,6 +4896,8 @@
     <string name="pref_sleepasandroid_spo2_autofetch">SpO2 Auto-fetch Settings</string>
     <string name="pref_sleepasandroid_spo2_autofetch_interval">Fetch interval (seconds)</string>
     <string name="pref_huawei_experimental_sleep_as_android_summary">Only tested on the Huawei Band 9. On other models it is unknown whether movement and heart rate reach Sleep as Android, how much battery it costs, or how the device reacts</string>
+    <string name="pref_huawei_sleep_as_android_backup_alarm_title">Sleep as Android backup alarm</string>
+    <string name="pref_huawei_sleep_as_android_backup_alarm_summary">Keeps the next Sleep as Android alarm on the band, 5 minutes late, so the band wakes you even if the phone is off. Dismissing the alarm in Sleep as Android removes it. Uses the band\'s last alarm slot</string>
     <string name="pref_sleepasandroid_spo2_autofetch_interval_min_summary">This device fetches at most every %d seconds</string>
     <string name="pref_title_huawei_account">Huawei Account</string>
     <string name="pref_summary_huawei_account">Huawei account used in pairing process. Setting it allows to pair without factory reset.</string>
