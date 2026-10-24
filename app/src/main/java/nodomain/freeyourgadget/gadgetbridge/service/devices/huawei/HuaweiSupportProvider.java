@@ -293,9 +293,15 @@ public class HuaweiSupportProvider {
     private boolean dvLiteHrActive = false;
     private static final long DVLITE_ACC_STALE_MS = 10_000L;
     // Band 9 measures HR in bursts like its own spot check: ~14 s warm-up, ~7 readings at 1/s, then
-    // the LED goes off. Re-enabling 3 min after the last reading gives one burst per ~3 min, which
-    // keeps the LED mostly off; a night at 5 min cost ~5% battery, so the denser HR is affordable.
-    private static final long DVLITE_HR_STALE_MS = 180_000L;
+    // the LED goes off. Re-enabling 2 min after the last reading gives one burst per ~2 min, which
+    // keeps the LED mostly off. Sleep as Android stores HR in 5 min slots and at ~3 min bursts left
+    // about a third of the slots empty; a night at 3 min cost ~0.6%/h battery.
+    private static final long DVLITE_HR_STALE_MS = 120_000L;
+    // On a thin wrist a burst often ends without a single valid reading. A good burst is done ~25 s
+    // after enabling, so if nothing came within 45 s try once more instead of waiting the full 2 min.
+    private static final long DVLITE_HR_RETRY_MS = 45_000L;
+    private volatile long lastDvLiteHrEnableMs = 0;
+    private boolean dvLiteHrRetried = false;
 
     public void onDvLiteAccData() {
         lastDvLiteAccDataMs = SystemClock.elapsedRealtime();
@@ -335,6 +341,11 @@ public class HuaweiSupportProvider {
         }
     }
 
+    private void enableDvLiteHr(long now) {
+        sendDvLiteSensorControl(DvLiteSensor.SENSOR_ID_HR, DvLiteSensor.RATE_HIGH, DvLiteSensor.METHOD_ENABLE);
+        lastDvLiteHrEnableMs = now;
+    }
+
     private final Runnable sleepTrackingPollingRunner = new Runnable() {
         @Override
         public void run() {
@@ -345,9 +356,19 @@ public class HuaweiSupportProvider {
                     sendDvLiteSensorControl(DvLiteSensor.SENSOR_ID_ACC, DvLiteSensor.RATE_MID, DvLiteSensor.METHOD_ENABLE);
                     lastDvLiteAccDataMs = now;
                 }
-                if (dvLiteHrActive && now - lastDvLiteHrDataMs > DVLITE_HR_STALE_MS) {
-                    sendDvLiteSensorControl(DvLiteSensor.SENSOR_ID_HR, DvLiteSensor.RATE_HIGH, DvLiteSensor.METHOD_ENABLE);
-                    lastDvLiteHrDataMs = now;
+                if (dvLiteHrActive) {
+                    final boolean burstEmpty = lastDvLiteHrDataMs < lastDvLiteHrEnableMs;
+                    if (burstEmpty && !dvLiteHrRetried && now - lastDvLiteHrEnableMs > DVLITE_HR_RETRY_MS) {
+                        LOG.info("No heart rate {} ms after enable, retrying", now - lastDvLiteHrEnableMs);
+                        enableDvLiteHr(now);
+                        dvLiteHrRetried = true;
+                    } else if (now - Math.max(lastDvLiteHrDataMs, lastDvLiteHrEnableMs) > DVLITE_HR_STALE_MS) {
+                        if (burstEmpty) {
+                            LOG.info("Heart rate retry also empty");
+                        }
+                        enableDvLiteHr(now);
+                        dvLiteHrRetried = false;
+                    }
                 }
                 if (rriActive && now - lastRriDataMs > RRI_STALE_MS) {
                     sendRriOpenClose(RRI_OPEN);
@@ -369,8 +390,8 @@ public class HuaweiSupportProvider {
         }
         dvLiteHrActive = sleepAsAndroidSender != null && sleepAsAndroidSender.isHeartRateRequested();
         if (dvLiteHrActive) {
-            sendDvLiteSensorControl(DvLiteSensor.SENSOR_ID_HR, DvLiteSensor.RATE_HIGH, DvLiteSensor.METHOD_ENABLE);
-            lastDvLiteHrDataMs = now;
+            enableDvLiteHr(now);
+            dvLiteHrRetried = false;
         }
         // SpO2 is fetched from the band's minute records, so it also follows the preference.
         if (sleepAsAndroidSender != null && sleepAsAndroidSender.isFeatureEnabled(SleepAsAndroidFeature.SPO2)) {
