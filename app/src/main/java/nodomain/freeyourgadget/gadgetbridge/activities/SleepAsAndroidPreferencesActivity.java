@@ -78,7 +78,11 @@ public class SleepAsAndroidPreferencesActivity extends AbstractSettingsActivityV
                             findPreference("pref_key_sleepasandroid_feat_notifications").setEnabled(supportedFeatures.contains(SleepAsAndroidFeature.NOTIFICATIONS));
                             findPreference("pref_key_sleepasandroid_feat_movement").setEnabled(supportedFeatures.contains(SleepAsAndroidFeature.ACCELEROMETER));
                             findPreference("pref_key_sleepasandroid_feat_hr").setEnabled(supportedFeatures.contains(SleepAsAndroidFeature.HEART_RATE));
+                            final boolean rrScreenOn = supportedFeatures.contains(SleepAsAndroidFeature.RR_INTERVALS_SCREEN_ON);
                             findPreference("pref_key_sleepasandroid_feat_rr_intervals").setEnabled(supportedFeatures.contains(SleepAsAndroidFeature.RR_INTERVALS));
+                            findPreference("pref_key_sleepasandroid_feat_rr_intervals").setVisible(!rrScreenOn);
+                            findPreference("pref_key_sleepasandroid_feat_rr_intervals_screen_on").setEnabled(rrScreenOn);
+                            findPreference("pref_key_sleepasandroid_feat_rr_intervals_screen_on").setVisible(rrScreenOn);
                             findPreference("pref_key_sleepasandroid_feat_oximetry").setEnabled(supportedFeatures.contains(SleepAsAndroidFeature.OXIMETRY));
                             final boolean spo2Supported = supportedFeatures.contains(SleepAsAndroidFeature.SPO2);
                             final boolean spo2AutofetchSupported = supportedFeatures.contains(SleepAsAndroidFeature.SPO2_AUTOFETCH);
@@ -86,6 +90,7 @@ public class SleepAsAndroidPreferencesActivity extends AbstractSettingsActivityV
                             spo2Pref.setEnabled(spo2Supported);
                             spo2Pref.setSummary(spo2AutofetchSupported ? getString(R.string.pref_sleepasandroid_feat_spo2_autofetch_only_summary) : null);
                             findPreference("pref_key_sleepasandroid_spo2_autofetch_interval").setEnabled(spo2AutofetchSupported && spo2Supported && spo2Pref.isChecked());
+                            setSpo2IntervalSummary(device);
 
                             ListPreference alarmSlots = findPreference(GBPrefs.SLEEP_AS_ANDROID_ALARM_SLOT);
                             if (alarmSlots != null)
@@ -116,7 +121,11 @@ public class SleepAsAndroidPreferencesActivity extends AbstractSettingsActivityV
                     findPreference("pref_key_sleepasandroid_feat_notifications").setEnabled(supportedFeatures.contains(SleepAsAndroidFeature.NOTIFICATIONS));
                     findPreference("pref_key_sleepasandroid_feat_movement").setEnabled(supportedFeatures.contains(SleepAsAndroidFeature.ACCELEROMETER));
                     findPreference("pref_key_sleepasandroid_feat_hr").setEnabled(supportedFeatures.contains(SleepAsAndroidFeature.HEART_RATE));
+                    final boolean rrScreenOn = supportedFeatures.contains(SleepAsAndroidFeature.RR_INTERVALS_SCREEN_ON);
                     findPreference("pref_key_sleepasandroid_feat_rr_intervals").setEnabled(supportedFeatures.contains(SleepAsAndroidFeature.RR_INTERVALS));
+                    findPreference("pref_key_sleepasandroid_feat_rr_intervals").setVisible(!rrScreenOn);
+                    findPreference("pref_key_sleepasandroid_feat_rr_intervals_screen_on").setEnabled(rrScreenOn);
+                    findPreference("pref_key_sleepasandroid_feat_rr_intervals_screen_on").setVisible(rrScreenOn);
                     findPreference("pref_key_sleepasandroid_feat_oximetry").setEnabled(supportedFeatures.contains(SleepAsAndroidFeature.OXIMETRY));
                     final boolean spo2Supported = supportedFeatures.contains(SleepAsAndroidFeature.SPO2);
                     final boolean spo2AutofetchSupported = supportedFeatures.contains(SleepAsAndroidFeature.SPO2_AUTOFETCH);
@@ -124,8 +133,15 @@ public class SleepAsAndroidPreferencesActivity extends AbstractSettingsActivityV
                     spo2Pref.setEnabled(spo2Supported);
                     spo2Pref.setSummary(spo2AutofetchSupported ? getString(R.string.pref_sleepasandroid_feat_spo2_autofetch_only_summary) : null);
                     findPreference("pref_key_sleepasandroid_spo2_autofetch_interval").setEnabled(spo2AutofetchSupported && spo2Supported && spo2Pref.isChecked());
+                    setSpo2IntervalSummary(device);
                 }
             }
+        }
+
+        private void setSpo2IntervalSummary(GBDevice device) {
+            final int minInterval = device.getDeviceCoordinator().getSleepAsAndroidSpo2MinFetchIntervalSeconds(device);
+            findPreference("pref_key_sleepasandroid_spo2_autofetch_interval").setSummary(
+                    minInterval > 0 ? getString(R.string.pref_sleepasandroid_spo2_autofetch_interval_min_summary, minInterval) : null);
         }
     }
 

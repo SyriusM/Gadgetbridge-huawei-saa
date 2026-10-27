@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.preference.PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+    <SwitchPreferenceCompat
+        android:defaultValue="false"
+        android:icon="@drawable/ic_bedtime_on"
+        android:key="huawei_experimental_sleep_as_android"
+        android:layout="@layout/preference_checkbox"
+        android:summary="@string/pref_huawei_experimental_sleep_as_android_summary"
+        android:title="@string/sleepasandroid_settings" />
+</androidx.preference.PreferenceScreen>

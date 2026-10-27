@@ -179,6 +179,7 @@ import nodomain.freeyourgadget.gadgetbridge.service.devices.huawei.requests.Send
 import nodomain.freeyourgadget.gadgetbridge.service.devices.huawei.requests.SendRunPaceConfigRequest;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.huawei.requests.SendSetContactsRequest;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.huawei.requests.SendNotifyHeartRateCapabilityRequest;
+import nodomain.freeyourgadget.gadgetbridge.service.devices.huawei.requests.SendHROpenCloseRequest;
 import android.os.SystemClock;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.huawei.requests.SendNotifyRestHeartRateCapabilityRequest;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.huawei.requests.SendSetECGOpenRequest;
@@ -286,6 +287,61 @@ public class HuaweiSupportProvider {
     private long lastStartTrackingTimestamp = 0;
     // Survives the provider being recreated on reconnect, so tracking resumes by itself.
     private static volatile String saaTrackingAddress = null;
+
+    // RR intervals come from the band's stress measurement (0x19/0x05, opened with 0x19/0x01). It
+    // streams until closed and keeps the measurement screen on meanwhile, hence opt-in.
+    private static final byte RRI_OPEN = 3;
+    private static final byte RRI_CLOSE = 4;
+    private static final long RRI_STALE_MS = 30_000L;
+    private volatile long lastRriDataMs = 0;
+    private boolean rriActive = false;
+
+    public void onRriData() {
+        lastRriDataMs = SystemClock.elapsedRealtime();
+    }
+
+    private void sendRriOpenClose(byte type) {
+        try {
+            new SendHROpenCloseRequest(this, type).doPerform();
+            LOG.info("RRI stream {} sent", type == RRI_OPEN ? "open" : "close");
+        } catch (Exception e) {
+            LOG.warn("RRI stream {} failed: {}", type, e.getMessage());
+        }
+    }
+
+    private final Runnable rriWatchdogRunner = new Runnable() {
+        @Override
+        public void run() {
+            if (!rriActive) {
+                return;
+            }
+            final long now = SystemClock.elapsedRealtime();
+            if (now - lastRriDataMs > RRI_STALE_MS) {
+                sendRriOpenClose(RRI_OPEN);
+                lastRriDataMs = now;
+            }
+            handler.postDelayed(this, 10_000L);
+        }
+    };
+
+    private void startRri() {
+        rriActive = sleepAsAndroidSender != null && sleepAsAndroidSender.isFeatureEnabled(SleepAsAndroidFeature.RR_INTERVALS);
+        if (!rriActive) {
+            return;
+        }
+        sendRriOpenClose(RRI_OPEN);
+        lastRriDataMs = SystemClock.elapsedRealtime();
+        handler.removeCallbacks(rriWatchdogRunner);
+        handler.postDelayed(rriWatchdogRunner, 10_000L);
+    }
+
+    private void stopRri() {
+        handler.removeCallbacks(rriWatchdogRunner);
+        if (rriActive) {
+            sendRriOpenClose(RRI_CLOSE);
+            rriActive = false;
+        }
+    }
 
     private MediaManager mediaManager = null;
 
@@ -1640,7 +1696,43 @@ public class HuaweiSupportProvider {
         }
     }
 
+    // Window of minute records read per SpO2 auto-fetch. The band measures SpO2 about every 10 min
+    // at night, so 15 min covers one measurement even when a fetch is skipped.
+    private static final int SAA_SPO2_FETCH_WINDOW_S = 15 * 60;
+    private int lastForwardedSpo2Timestamp = 0;
+
+    /**
+     * Reads the recent minute records only, instead of the full activity sync, which also downloads
+     * TruSleep, stress and ECG files and is too heavy to repeat during the night.
+     */
+    private void fetchSpo2ForSleepAsAndroid() {
+        if (syncState.isSyncActive() || gbDevice.isBusy()) {
+            LOG.debug("Skipping SpO2 fetch for Sleep as Android, a sync is running");
+            return;
+        }
+        LOG.debug("Fetching SpO2 for Sleep as Android");
+        final int end = (int) (System.currentTimeMillis() / 1000);
+        try {
+            new GetStepDataCountRequest(this, end - SAA_SPO2_FETCH_WINDOW_S, end).setSpo2Only().doPerform();
+        } catch (IOException e) {
+            LOG.error("Failed to fetch SpO2 for Sleep as Android", e);
+        }
+    }
+
+    public void forwardSpo2ToSleepAsAndroid(int timestamp, int spo2) {
+        if (sleepAsAndroidSender == null || spo2 <= 0 || timestamp <= lastForwardedSpo2Timestamp) {
+            return;
+        }
+        lastForwardedSpo2Timestamp = timestamp;
+        sleepAsAndroidSender.sendExtra(null, null, (float) spo2, null, timestamp * 1000L);
+    }
+
     public void onFetchRecordedData(int dataTypes) {
+        // Sleep as Android auto-fetch asks for SpO2 alone.
+        if (dataTypes == RecordedDataTypes.TYPE_SPO2) {
+            fetchSpo2ForSleepAsAndroid();
+            return;
+        }
         for (int i = 1; i > -1; i <<= 1) {
             if ((dataTypes & i) != 0) {
                 switch (i) {
@@ -2901,10 +2993,16 @@ public class HuaweiSupportProvider {
                 saaTrackingAddress = gbDevice.getAddress();
                 // Extras carry which sensors SaA wants; without them heart rate is never forwarded.
                 sender.startTracking(extras);
+                // SpO2 is fetched from the band's minute records, so it follows the preference.
+                if (sender.isFeatureEnabled(SleepAsAndroidFeature.SPO2)) {
+                    sender.requestOximetry();
+                }
+                startRri();
                 break;
             case SleepAsAndroidAction.STOP_TRACKING:
                 saaTrackingAddress = null;
                 sender.stopTracking();
+                stopRri();
                 break;
             case SleepAsAndroidAction.SET_BATCH_SIZE:
                 sender.setBatchSize(extras.getLong("SIZE", 12L));
@@ -3153,6 +3251,7 @@ public class HuaweiSupportProvider {
         // A reconnect creates a new provider; the old one must not keep polling a dead queue.
         if (handler != null) {
             handler.removeCallbacks(saaAlarmBuzz);
+            handler.removeCallbacks(rriWatchdogRunner);
         }
         if (sleepAsAndroidSender != null && sleepAsAndroidSender.isTrackingOngoing()) {
             sleepAsAndroidSender.stopTracking();

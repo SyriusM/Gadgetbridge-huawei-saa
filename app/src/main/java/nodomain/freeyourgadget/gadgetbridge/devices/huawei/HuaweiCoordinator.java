@@ -30,6 +30,9 @@ import org.apache.commons.lang3.ArrayUtils;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import nodomain.freeyourgadget.gadgetbridge.devices.SleepAsAndroidFeature;
+import java.util.Set;
+import java.util.EnumSet;
 import java.util.List;
 
 import nodomain.freeyourgadget.gadgetbridge.GBApplication;
@@ -573,4 +576,39 @@ public abstract class HuaweiCoordinator extends AbstractDeviceCoordinator {
     }
 
     public static final String PREF_SLEEP_AS_ANDROID_BACKUP_ALARM = "huawei_sleep_as_android_backup_alarm";
+
+    private static final String PREF_EXPERIMENTAL_SLEEP_AS_ANDROID = "huawei_experimental_sleep_as_android";
+
+    /**
+     * Sleep as Android support, verified only on the models that override this. Other models can opt in through the experimental settings.
+     */
+    protected boolean supportsSleepAsAndroidTracking(@NonNull final GBDevice device) {
+        return experimentalSettingEnabled(device, PREF_EXPERIMENTAL_SLEEP_AS_ANDROID);
+    }
+
+    @Override
+    public int[] getSupportedDeviceSpecificExperimentalSettings(final GBDevice device) {
+        return new int[]{R.xml.devicesettings_huawei_experimental_sleep_as_android};
+    }
+
+    @Override
+    public boolean supportsSleepAsAndroid(@NonNull final GBDevice device) {
+        return supportsSleepAsAndroidTracking(device);
+    }
+
+    @Override
+    public Set<SleepAsAndroidFeature> getSleepAsAndroidFeatures(@NonNull final GBDevice device) {
+        if (!supportsSleepAsAndroidTracking(device)) {
+            return Collections.emptySet();
+        }
+        return EnumSet.of(
+                SleepAsAndroidFeature.HEART_RATE,
+                SleepAsAndroidFeature.NOTIFICATIONS,
+                SleepAsAndroidFeature.ALARMS,
+                SleepAsAndroidFeature.RR_INTERVALS,
+                SleepAsAndroidFeature.RR_INTERVALS_SCREEN_ON,
+                SleepAsAndroidFeature.SPO2,
+                SleepAsAndroidFeature.SPO2_AUTOFETCH
+        );
+    }
 }

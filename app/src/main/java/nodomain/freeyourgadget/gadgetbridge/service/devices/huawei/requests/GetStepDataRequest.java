@@ -37,6 +37,9 @@ public class GetStepDataRequest extends Request {
 
     short maxCount;
     short count;
+    // Forward SpO2 to Sleep as Android without storing: the newest stored record is where the next
+    // full sync starts, so storing a recent window would make it skip everything before.
+    boolean spo2Only = false;
 
     public GetStepDataRequest(HuaweiSupportProvider support, short maxCount, short count) {
         super(support);
@@ -65,6 +68,16 @@ public class GetStepDataRequest extends Request {
         if (response.number != this.count) {
             LOG.warn("Counts do not match! Received: {}, expected: {}", response.number, this.count);
             this.count = response.number; // This stops it from going into a loop
+        }
+
+        if (spo2Only) {
+            for (FitnessData.MessageData.StepResponse.SubContainer subContainer : response.containers) {
+                if (subContainer.parsedData != null) {
+                    supportProvider.forwardSpo2ToSleepAsAndroid(subContainer.timestamp, subContainer.spo);
+                }
+            }
+            requestNext();
+            return;
         }
 
         try (DBHandler db = GBApplication.acquireDB()) {
@@ -126,8 +139,13 @@ public class GetStepDataRequest extends Request {
             LOG.error("Failed to add step data to database", e);
         }
 
+        requestNext();
+    }
+
+    private void requestNext() {
         if (count + 1 < maxCount) {
             GetStepDataRequest nextRequest = new GetStepDataRequest(supportProvider, this.maxCount, (short) (this.count + 1));
+            nextRequest.spo2Only = this.spo2Only;
             nextRequest.setFinalizeReq(this.finalizeReq);
             this.nextRequest(nextRequest);
         }
