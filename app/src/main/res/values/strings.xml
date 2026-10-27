@@ -5152,6 +5152,8 @@
     <string name="pref_sleepasandroid_feat_spo2_autofetch_only_summary">This device only provides SpO2 via periodic auto-fetch, not live readings</string>
     <string name="pref_sleepasandroid_spo2_autofetch">SpO2 Auto-fetch Settings</string>
     <string name="pref_sleepasandroid_spo2_autofetch_interval">Fetch interval (seconds)</string>
+    <string name="pref_huawei_sleep_as_android_backup_alarm_title">Sleep as Android backup alarm</string>
+    <string name="pref_huawei_sleep_as_android_backup_alarm_summary">Keeps the next Sleep as Android alarm on the band, 5 minutes late, so the band wakes you even if the phone is off. Dismissing the alarm in Sleep as Android removes it. Uses the band\'s last alarm slot</string>
     <string name="pref_title_huawei_account">Huawei Account</string>
     <string name="pref_summary_huawei_account">Huawei account used in pairing process. Setting it allows to pair without factory reset.</string>
     <string name="watchface_resolution_doesnt_match">Watchface resolution doesn\'t match device screen. Watchface is %1$s device screen is %2$s</string>
