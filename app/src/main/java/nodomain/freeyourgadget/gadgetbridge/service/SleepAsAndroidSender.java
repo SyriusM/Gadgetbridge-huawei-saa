@@ -511,6 +511,10 @@ public class SleepAsAndroidSender {
         return oximetryRequested;
     }
 
+    public boolean isTrackingOngoing() {
+        return trackingOngoing;
+    }
+
     /**
      * On heart rate changed
      *

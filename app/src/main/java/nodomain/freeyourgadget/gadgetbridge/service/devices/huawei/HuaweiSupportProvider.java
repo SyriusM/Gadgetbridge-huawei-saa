@@ -126,6 +126,7 @@ import nodomain.freeyourgadget.gadgetbridge.model.MusicSpec;
 import nodomain.freeyourgadget.gadgetbridge.model.MusicStateSpec;
 import nodomain.freeyourgadget.gadgetbridge.model.NavigationInfoSpec;
 import nodomain.freeyourgadget.gadgetbridge.model.NotificationSpec;
+import nodomain.freeyourgadget.gadgetbridge.model.NotificationType;
 import nodomain.freeyourgadget.gadgetbridge.model.RecordedDataTypes;
 import nodomain.freeyourgadget.gadgetbridge.model.WeatherSpec;
 
@@ -177,6 +178,7 @@ import nodomain.freeyourgadget.gadgetbridge.service.devices.huawei.requests.Send
 import nodomain.freeyourgadget.gadgetbridge.service.devices.huawei.requests.SendRunPaceConfigRequest;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.huawei.requests.SendSetContactsRequest;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.huawei.requests.SendNotifyHeartRateCapabilityRequest;
+import android.os.SystemClock;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.huawei.requests.SendNotifyRestHeartRateCapabilityRequest;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.huawei.requests.SendSetECGOpenRequest;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.huawei.requests.SendSleepBreathRequest;
@@ -245,6 +247,9 @@ import nodomain.freeyourgadget.gadgetbridge.util.GB;
 import nodomain.freeyourgadget.gadgetbridge.util.MediaManager;
 import nodomain.freeyourgadget.gadgetbridge.util.StringUtils;
 import nodomain.freeyourgadget.gadgetbridge.util.preferences.DevicePrefs;
+import nodomain.freeyourgadget.gadgetbridge.service.SleepAsAndroidSender;
+import nodomain.freeyourgadget.gadgetbridge.devices.SleepAsAndroidFeature;
+import nodomain.freeyourgadget.gadgetbridge.externalevents.sleepasandroid.SleepAsAndroidAction;
 
 public class HuaweiSupportProvider {
     private static final Logger LOG = LoggerFactory.getLogger(HuaweiSupportProvider.class);
@@ -274,6 +279,11 @@ public class HuaweiSupportProvider {
     protected String macAddress;
     protected String androidID;
     protected short msgId = 0;
+
+    private SleepAsAndroidSender sleepAsAndroidSender;
+    private long lastStartTrackingTimestamp = 0;
+    // Survives the provider being recreated on reconnect, so tracking resumes by itself.
+    private static volatile String saaTrackingAddress = null;
 
     private MediaManager mediaManager = null;
 
@@ -1136,6 +1146,7 @@ public class HuaweiSupportProvider {
                 @Override
                 public void call() {
                     gbDevice.setUpdateState(GBDevice.State.INITIALIZED, getContext());
+                    resumeSleepAsAndroidTrackingAfterReconnect();
 
                     if (getDeviceState().supportsP2PService()) {
                         if (getDeviceState().supportsCalendar()) {
@@ -2831,8 +2842,158 @@ public class HuaweiSupportProvider {
         handler.removeCallbacks(batteryRunner);
     }
 
+    // Survives the provider being recreated on reconnect, so tracking resumes by itself.
+    private void resumeSleepAsAndroidTrackingAfterReconnect() {
+        if (gbDevice == null || !gbDevice.getAddress().equals(saaTrackingAddress)) {
+            return;
+        }
+        LOG.info("Resuming Sleep as Android tracking after reconnect");
+        onSleepAsAndroidAction(SleepAsAndroidAction.START_TRACKING, new Bundle());
+    }
+
+    public SleepAsAndroidSender getSleepAsAndroidSender() {
+        if (sleepAsAndroidSender == null && gbDevice != null) {
+            sleepAsAndroidSender = new SleepAsAndroidSender(gbDevice);
+        }
+        return sleepAsAndroidSender;
+    }
+
+    public void onSleepAsAndroidAction(String action, Bundle extras) {
+        SleepAsAndroidSender sender = getSleepAsAndroidSender();
+        if (sender == null) return;
+        if (gbDevice == null || !gbDevice.getState().equalsOrHigherThan(GBDevice.State.INITIALIZED)) {
+            LOG.warn("Device not initialized, dropping SaA action {}", action);
+            return;
+        }
+
+        boolean isTest = extras != null && extras.getBoolean("IS_TEST", false);
+        if (!isTest && !SleepAsAndroidAction.HINT.equals(action)) {
+            try {
+                sender.validateAction(action);
+            } catch (UnsupportedOperationException e) {
+                LOG.warn("Unsupported SleepAsAndroid action: " + action);
+                return;
+            }
+        }
+
+        LOG.info("Huawei handling SleepAsAndroid action: " + action + (isTest ? " (TEST)" : ""));
+
+        switch (action) {
+            case SleepAsAndroidAction.CHECK_CONNECTED:
+                sender.confirmConnected();
+                break;
+            case SleepAsAndroidAction.START_TRACKING:
+                lastStartTrackingTimestamp = System.currentTimeMillis();
+                saaTrackingAddress = gbDevice.getAddress();
+                // Extras carry which sensors SaA wants; without them heart rate is never forwarded.
+                sender.startTracking(extras);
+                break;
+            case SleepAsAndroidAction.STOP_TRACKING:
+                saaTrackingAddress = null;
+                sender.stopTracking();
+                break;
+            case SleepAsAndroidAction.SET_BATCH_SIZE:
+                sender.setBatchSize(extras.getLong("SIZE", 12L));
+                break;
+            case SleepAsAndroidAction.SET_PAUSE: {
+                long pauseTimestamp = extras.getLong("TIMESTAMP");
+                long delay = pauseTimestamp > 0 ? pauseTimestamp - System.currentTimeMillis() : 0;
+                sender.pauseTracking(delay);
+                break;
+            }
+            case SleepAsAndroidAction.SET_SUSPENDED:
+                sender.pauseTracking(extras.getBoolean("SUSPENDED", false));
+                break;
+            case SleepAsAndroidAction.START_ALARM:
+                startSleepAsAndroidAlarm(extras != null ? extras.getInt("DELAY", 0) : 0);
+                break;
+            case SleepAsAndroidAction.STOP_ALARM:
+                stopSleepAsAndroidAlarm();
+                break;
+            case SleepAsAndroidAction.UPDATE_ALARM:
+                // The alarm lives in Sleep as Android, which sends START_ALARM when it rings.
+                break;
+            case SleepAsAndroidAction.HINT:
+                triggerSleepAsAndroidHint(extras != null ? extras.getInt("REPEAT", 1) : 1);
+                break;
+            case SleepAsAndroidAction.SHOW_NOTIFICATION: {
+                final NotificationSpec spec = new NotificationSpec();
+                spec.setType(NotificationType.UNKNOWN);
+                spec.setTitle(extras != null ? extras.getString("TITLE") : null);
+                spec.setBody(extras != null ? extras.getString("TEXT") : null);
+                // Part of sleep tracking, so not gated by the phone notification toggle.
+                huaweiNotificationsManager.onNotification(spec);
+                break;
+            }
+            default:
+                LOG.warn("Unknown SleepAsAndroid action: " + action);
+                break;
+        }
+    }
+
+    /**
+     * Sleep as Android hints (lucid dreaming cues, anti-snoring) should be a gentle buzz, so send
+     * a short notification, which vibrates once, instead of the strong find device vibration.
+     */
+    private static final long SAA_ALARM_BUZZ_INTERVAL_MS = 5_000L;
+    private static final long SAA_ALARM_MAX_MS = 10 * 60_000L;
+    private long saaAlarmEndMs = 0;
+
+    private final Runnable saaAlarmBuzz = new Runnable() {
+        @Override
+        public void run() {
+            if (SystemClock.elapsedRealtime() > saaAlarmEndMs) {
+                LOG.info("Sleep as Android alarm vibration timed out");
+                return;
+            }
+            triggerSleepAsAndroidHint(1);
+            handler.postDelayed(this, SAA_ALARM_BUZZ_INTERVAL_MS);
+        }
+    };
+
+    /** Gentle repeated buzz until STOP_ALARM; DELAY -1 means SaA does not want the watch to ring. */
+    private void startSleepAsAndroidAlarm(int delayMs) {
+        stopSleepAsAndroidAlarm();
+        if (delayMs < 0 || handler == null) {
+            return;
+        }
+        LOG.info("Sleep as Android alarm, vibration in {} ms", delayMs);
+        saaAlarmEndMs = SystemClock.elapsedRealtime() + delayMs + SAA_ALARM_MAX_MS;
+        handler.postDelayed(saaAlarmBuzz, delayMs);
+    }
+
+    private void stopSleepAsAndroidAlarm() {
+        if (handler != null) {
+            handler.removeCallbacks(saaAlarmBuzz);
+        }
+    }
+
+    private static final long SAA_HINT_REMOVE_DELAY_MS = 2000L;
+
+    private void triggerSleepAsAndroidHint(int repeat) {
+        if (repeat <= 0) {
+            return;
+        }
+        LOG.info("Sleep as Android hint, repeat {}", repeat);
+        final NotificationSpec spec = new NotificationSpec();
+        spec.setType(NotificationType.UNKNOWN);
+        spec.setTitle("Sleep as Android");
+        huaweiNotificationsManager.onNotification(spec);
+        // Only the buzz matters; do not leave the hint in the band's notification list.
+        if (handler != null) {
+            handler.postDelayed(() -> huaweiNotificationsManager.onDeleteNotification(spec.getId()), SAA_HINT_REMOVE_DELAY_MS);
+        }
+    }
+
     public void dispose() {
         stopBatteryRunnerDelayed();
+        // A reconnect creates a new provider; the old one must not keep polling a dead queue.
+        if (handler != null) {
+            handler.removeCallbacks(saaAlarmBuzz);
+        }
+        if (sleepAsAndroidSender != null && sleepAsAndroidSender.isTrackingOngoing()) {
+            sleepAsAndroidSender.stopTracking();
+        }
         huaweiFileDownloadManager.dispose();
         huaweiP2PManager.unregisterAllService();
         huaweiDataSyncManager.unregisterAll();
